@@ -1,5 +1,7 @@
 import sys,os,sqlite3,string,datetime,random
 
+version = 1.0
+
 def databaseMangle(value,choice=string.uppercase):
 	'''
 	Convert an integer into a sequence of letters.
@@ -149,14 +151,16 @@ class Dataset:
 		fishstocks  = ','.join(fishstocks_list)
 		fishstocks_quoted = ','.join([repr(item) for item in fishstocks_list])
 
-		email = '''Dear RDM,
+		email = '''
+		Dear RDM,
 
 		Trophia Ltd has been contracted by %s under project "%s" to analyse catch and effort data for %s. We would like
 		to do an initial summary of the data for these Fishstocks so that we can determine the best set of criteria for our data extract.
 		Please could you do a count of the number of fishing_events recording each primary_method, target_species, start_stats_area_code
 		and form_type for all of the trips that landed to these Fishstocks between %s and %s.'''%(self.client,self.project,fishstocks,self.begin,self.end)
 
-		email += '''\n\nAppended to the end of this message is draft SQL that should do the summaries required.  This SQL is
+		email += '''
+		\n\nAppended to the end of this message is draft SQL that should do the summaries required.  This SQL is
 		based on the SQL that we have received from MFish in previous extracts. It involves the creation of a temporary table which lists the qualifying trips
 		and extracts of various data based on this table. Could you please supply us with the final SQL used, so that for future extracts we can
 		correct any errors or omissions that we have made.
@@ -198,10 +202,10 @@ class Dataset:
 		/*   Fishing events by %s for trips selected                         */
 		/* *********************************************/
 		select 
-		fi.%s,
-		count(*),
-		sum(fi.effort_num),
-		sum(fi.catch_weight)
+		  fi.%s,
+		  count(*),
+		  sum(fi.effort_num),
+		  sum(fi.catch_weight)
 		from warehou..ce_fishing_event fi,tempdb..trophia_%s tt
 		where fi.interp_yn = 'Y' and tt.trip = fi.trip
 		group by fi.%s;
@@ -211,7 +215,7 @@ class Dataset:
 
 	def request(self):
 		'''Automatically create a data request email based'''
-
+		
 		species = ','.join(self.species)
 		species_quoted = ','.join([repr(item) for item in self.species])
 		fishstocks_list = []
@@ -219,14 +223,14 @@ class Dataset:
 		fishstocks  = ','.join(fishstocks_list)
 		fishstocks_quoted = ','.join([repr(item) for item in fishstocks_list])
 
-		email = '''Dear RDM,
+		##Email text
+		email = '''
+		Dear RDM,
 
 		Trophia Ltd has been contracted by %s under project "%s" to analyse catch and effort data for %s. We would like
 		to obtain catch and effort data for fishing trips that occurred between %s and %s, and that:'''%(self.client,self.project,fishstocks,self.begin,self.end)
 
-		if len(fishstocks_list)>0: 
-			email += '''
-			* landed to %s\n'''%(fishstocks)
+		if len(fishstocks_list)>0:  email += '''\n  * landed to %s\n'''%(fishstocks)
 
 		criteria = []
 		if len(self.statareas): criteria.append('''- were in statistical area(s) %s,'''%(','.join(self.statareas)))
@@ -234,16 +238,15 @@ class Dataset:
 		if len(self.targets): criteria.append('''- targeted species %s'''%(','.join(self.targets)))
 		if hasattr(self,'targets_not') and len(self.targets_not): criteria.append('''- did not target species %s'''%(','.join(self.targets_not)))
 		if len(criteria)>0:
-			email += '''\tOR\n\t* had fishing events that:\n\t\t'''
-			email += '\n\t\tAND\n\t\t'.join(criteria)
+			email += '''    OR\n    * had fishing events that:\n\t\t'''
+			email += '\n    AND\n    '.join(criteria)
 
 		email += '''\n\nFor these trips we would like to obtain all effort data as well as landings and estimated catch data for the following species : %s'''%species
 
 		email += '''\n\nIn addition, we would like to obtain monthly harvest return (MHR) data for all available months for the above fishstocks
 		by month, client and Fishstock.
 
-		Appended to the end of this message is draft SQL that includes the fields required for this extract.  This SQL is
-		based on the SQL that we have received from MFish in previous extracts. It involves the creation of a temporary table which lists the qualifying trips
+		Attached to this email is draft SQL that includes the fields required for this extract. It involves the creation of a temporary table which lists the qualifying trips
 		and extracts of various data based on this table. Could you please supply us with the final SQL used, so that for future extracts we can
 		correct any errors or omissions that we have made. Please could you provide the data in the usual MFish fixed field width text format.
 
@@ -252,258 +255,278 @@ class Dataset:
 		The request is subject to the conditions of the existing confidentiality agreement between MFish and Trophia.
 		Please contact me by email if you require any further details to support this request.
 		'''%self.request_extra_notes
-
-		sql = ''
-
-		sql += '''
+	
+		##Separate files for each extract file
+		tt = '''
 		/* *********************************************/
 		/*    List of trips that define the extract         */
 		/* *********************************************/
 		/* Create temporary table with index on trip */
-		use tempdb;
+		use tempdb
 		go
-		create table tempdb..trophia_%s (trip keys null);
+		
+		create table tempdb..trophia_%s (trip keys null)
 		go
-		create index index_1 on tempdb..trophia_%s (trip);
+		
+		create index index_1 on tempdb..trophia_%s (trip)
 		go
 		'''%(self.name,self.name)
 
-		sql += '''
+		tt += '''
 		/* Insert trips that meet landings criteria*/
 		insert tempdb..trophia_%s
 		select distinct la.trip
 		from warehou..ce_landing la
 		where la.interp_yn = 'Y'
-		and la.landing_datetime >= '%s'
-		and la.landing_datetime < '%s' '''%(self.name,self.begin,self.end)
+		  and la.landing_datetime >= '%s'
+		  and la.landing_datetime < '%s' '''%(self.name,self.begin,self.end)
+		if len(fishstocks_list)>0: tt += '''\n  and la.fishstock_code in (%s)'''%fishstocks_quoted
+		else: tt += '''\n  and la.species_code in (%s)'''%species_quoted
 
-		if len(fishstocks_list)>0: sql += '''\nand la.fishstock_code in (%s)'''%fishstocks_quoted
-		else: sql += '''\nand la.species_code in (%s)'''%species_quoted
-
-		sql += ''';\ngo\n'''
+		tt += '''\ngo\n'''
 
 		if len(criteria)>0:
-			sql += '''
+			tt += '''
 		/* Insert trips that meet effort criteria*/
 		insert tempdb..trophia_%s
 		select distinct fi.trip
 		from warehou..ce_fishing_event fi  
 		where fi.interp_yn = 'Y'
-		and fi.trip not in (select trip from tempdb..trophia_%s)
-		and fi.start_datetime >= '%s'
-		and fi.start_datetime < '%s' '''%(self.name,self.name,self.begin,self.end)
+		  and fi.trip not in (select trip from tempdb..trophia_%s)
+		  and fi.start_datetime >= '%s'
+		  and fi.start_datetime < '%s' '''%(self.name,self.name,self.begin,self.end)
 
-			if len(self.statareas)>0: sql += '''\nand fi.start_stats_area_code in (%s)'''%','.join([repr(item) for item in self.statareas])
-			if len(self.methods)>0: sql += '''\nand fi.primary_method in (%s)'''%','.join([repr(item) for item in self.methods])
-			if len(self.targets)>0: sql += '''\nand fi.target_species in (%s)'''%','.join([repr(item) for item in self.targets])
-			if hasattr(self,'targets_not'): sql += '''\nand fi.target_species not in (%s)'''%','.join([repr(item) for item in self.targets_not])
+			if len(self.statareas)>0: tt += '''\n  and fi.start_stats_area_code in (%s)'''%','.join([repr(item) for item in self.statareas])
+			if len(self.methods)>0: tt += '''\n  and fi.primary_method in (%s)'''%','.join([repr(item) for item in self.methods])
+			if len(self.targets)>0: tt += '''\n  and fi.target_species in (%s)'''%','.join([repr(item) for item in self.targets])
+			if hasattr(self,'targets_not'): tt += '''\n  and fi.target_species not in (%s)'''%','.join([repr(item) for item in self.targets_not])
 				
-			sql += ''';\ngo\n'''
+			tt += '''\ngo\n'''
 
-		sql += '''
+		td = '''
 		/* *********************************************/
 		/*      Trip details for trips selected     */
 		/* *********************************************/
 		select
-		td.trip,
-		td.trip_version,
-		td.start_datetime,
-		td.end_datetime,
-		td.vessel_key,
-		td.client_key
+		  td.trip,
+		  td.trip_version,
+		  td.start_datetime,
+		  td.end_datetime,
+		  td.vessel_key,
+		  td.client_key
 		from warehou..ce_trip_details td,tempdb..trophia_%s tt
-		where tt.trip = td.trip;
+		where tt.trip = td.trip
+		go
 		'''%self.name
 
-		sql += '''
+		fi = '''
 		/* *********************************************/
 		/*      Fishing events for trips selected     */
 		/* *********************************************/
 		select 
-		fi.event_key,
-		fi.version_seqno,
-		fi.group_key,
-		fi.start_datetime,
-		fi.end_datetime,
-		fi.primary_method,
-		fi.target_species,
-		fi.fishing_duration,
-		fi.catch_weight,
-		fi.catch_weight_other,
-		fi.non_fish_yn,
-		fi.effort_depth,
-		fi.effort_height,
-		fi.effort_num,
-		fi.effort_num_2,
-		fi.effort_seqno,
-		fi.effort_total_num,
-		fi.effort_width,
-		fi.effort_length,
-		fi.effort_speed,
-		fi.surface_temp,
-		fi.total_hook_num,
-		fi.set_end_datetime,
-		fi.haul_start_datetime,
-		fi.haul_start_wind_speed,
-		fi.haul_end_wind_speed,
-		fi.set_start_wind_speed,
-		fi.set_start_wind_direction,
-		fi.haul_end_wind_direction,
-		fi.haul_end_surface_temp,
-		fi.float_num,
-		fi.light_stick_num,
-		fi.line_shooter_yn,
-		fi.condition_type,
-		fi.total_net_length,
-		fi.double_reel_num,
-		fi.pair_trawl_yn,
-		fi.bottom_depth,
-		fi.trunc_start_lat,
-		fi.trunc_start_long,
-		fi.trunc_end_lat,
-		fi.trunc_end_long,
-		fi.start_stats_area_code,
-		fi.vessel_key,
-		fi.client_key,
-		fi.dcf_key ,
-		fi.form_type,
-		fi.trip
-
+		  fi.event_key,
+		  fi.version_seqno,
+		  fi.group_key,
+		  fi.start_datetime,
+		  fi.end_datetime,
+		  fi.primary_method,
+		  fi.target_species,
+		  fi.  fishing_duration,
+		  fi.catch_weight,
+		  fi.catch_weight_other,
+		  fi.non_  fish_yn,
+		  fi.effort_depth,
+		  fi.effort_height,
+		  fi.effort_num,
+		  fi.effort_num_2,
+		  fi.effort_seqno,
+		  fi.effort_total_num,
+		  fi.effort_width,
+		  fi.effort_length,
+		  fi.effort_speed,
+		  fi.surface_temp,
+		  fi.total_hook_num,
+		  fi.set_end_datetime,
+		  fi.haul_start_datetime,
+		  fi.haul_start_wind_speed,
+		  fi.haul_end_wind_speed,
+		  fi.set_start_wind_speed,
+		  fi.set_start_wind_direction,
+		  fi.haul_end_wind_direction,
+		  fi.haul_end_surface_temp,
+		  fi.float_num,
+		  fi.light_stick_num,
+		  fi.line_shooter_yn,
+		  fi.condition_type,
+		  fi.total_net_length,
+		  fi.double_reel_num,
+		  fi.pair_trawl_yn,
+		  fi.bottom_depth,
+		  fi.trunc_start_lat,
+		  fi.trunc_start_long,
+		  fi.trunc_end_lat,
+		  fi.trunc_end_long,
+		  fi.start_stats_area_code,
+		  fi.vessel_key,
+		  fi.client_key,
+		  fi.dcf_key ,
+		  fi.form_type,
+		  fi.trip
 		from warehou..ce_fishing_event fi,tempdb..trophia_%s tt
-		where fi.interp_yn = 'Y' and tt.trip = fi.trip;
+		where fi.interp_yn = 'Y' and tt.trip = fi.trip
+		go
 		'''%(self.name)
 
 
-		sql += '''
+		ca = '''
 		/* *********************************************/
 		/*      Estimated catch for species of interest     */
 		/* *********************************************/
 		select 
-		ca.event_key,
-		ca.version_seqno,
-		ca.group_key,
-		ca.species_code,
-		ca.catch_weight,
-		ca.trip
-
+		  ca.event_key,
+		  ca.version_seqno,
+		  ca.group_key,
+		  ca.species_code,
+		  ca.  catch_weight,
+		  ca.trip
 		from warehou..ce_estimated_subcatch ca,tempdb..trophia_%s tt
-		where ca.interp_yn = 'Y' and tt.trip = ca.trip and and ca.species_code in (%s);
+		where ca.interp_yn = 'Y'
+		  and tt.trip = ca.trip
+		  and and ca.species_code in (%s)
+		go
 		'''%(self.name,species_quoted)
 			
 
-		sql += '''
+		pr = '''
 		/* *********************************************/
 		/*      Processed catch for species of interest     */
 		/* *********************************************/
 		select 
-		pr.event_key,
-		pr.version_seqno,
-		pr.group_key,
-		pr.specprod_seqno,
-		pr.specprod_action_type
-		pr.processed_datetime,
-		pr.species_code,
-		pr.state_code,
-		pr.unit_type,
-		pr.unit_num,
-		pr.unit_weight,
-		pr.conv_factor,
-		pr.processed_weight,
-		pr.processed_weight_type,
-		pr.green_weight,
-		pr.green_weight_type,
-		pr.dcf_key,
-		pr.form_type,
-		pr.trip
-
+		  pr.event_key,
+		  pr.version_seqno,
+		  pr.group_key,
+		  pr.spec  prod_seqno,
+		  pr.spec  prod_action_type
+		  pr.  processed_datetime,
+		  pr.species_code,
+		  pr.state_code,
+		  pr.unit_type,
+		  pr.unit_num,
+		  pr.unit_weight,
+		  pr.conv_factor,
+		  pr.  processed_weight,
+		  pr.  processed_weight_type,
+		  pr.green_weight,
+		  pr.green_weight_type,
+		  pr.dcf_key,
+		  pr.form_type,
+		  pr.trip
 		from warehou..ce_processed_catch pr,tempdb..trophia_%s tt
-		where pr.interp_yn = 'Y' and tt.trip = pr.trip and pr.species_code in (%s);
+		where pr.interp_yn = 'Y'
+		  and tt.trip = pr.trip
+		  and pr.species_code in (%s)
+		go
 		'''%(self.name,species_quoted)
 			
 			
-		sql += '''
+		la = '''
 		/* *********************************************/
 		/*      Landings for the species of interest     */
 		/* *********************************************/
 		select 
-		la.event_key,
-		la.version_seqno,
-		la.group_key,
-		la.specprod_seqno,
-		la.landing_datetime,
-		la.landing_name,
-		la.species_code,
-		la.fishstock_code,
-		la.state_code,
-		la.destination_type,
-		la.unit_type,
-		la.unit_num,
-		la.unit_num_latest,
-		la.unit_num_other,
-		la.unit_weight,
-		la.conv_factor,
-		la.green_weight,
-		la.green_weight_type,
-		la.processed_weight,
-		la.processed_weight_type,
-		la.tranship_vessel_key,
-		la.vessel_key,
-		la.client_key,
-		la.dcf_key,
-		la.form_type,
-		la.trip
-
+		  la.event_key,
+		  la.version_seqno,
+		  la.group_key,
+		  la.specprod_seqno,
+		  la.  landing_datetime,
+		  la.  landing_name,
+		  la.species_code,
+		  la.fishstock_code,
+		  la.state_code,
+		  la.destination_type,
+		  la.unit_type,
+		  la.unit_num,
+		  la.unit_num_  latest,
+		  la.unit_num_other,
+		  la.unit_weight,
+		  la.conv_factor,
+		  la.green_weight,
+		  la.green_weight_type,
+		  la.processed_weight,
+		  la.processed_weight_type,
+		  la.tranship_vessel_key,
+		  la.vessel_key,
+		  la.client_key,
+		  la.dcf_key,
+		  la.form_type,
+		  la.trip
 		from warehou..ce_landing la, tempdb..trophia_%s tt
-		where la.interp_yn = 'Y' and tt.trip = la.trip and la.species_code in (%s);
+		where la.interp_yn = 'Y'
+		  and tt.trip = la.trip
+		  and la.species_code in (%s)
+		go
 		'''%(self.name,species_quoted)
 
 
-		sql += '''
+		vs = '''
 		/* *********************************************/
 		/*      Vessel histories for any vessels in the selected trips    */
 		/* *********************************************/
 		select 
-		vs.history_start_datetime,
-		vs.history_end_datetime,
-		vs.vessel_key,
-		vs.flag_nationality_code,
-		vs.overall_length_metres,
-		vs.registered_length_metres,
-		vs.draught_metres,
-		vs.beam_metres,
-		vs.gross_tonnes,
-		vs.max_speed_knots,
-		vs.service_speed_knots,
-		vs.engine_kilowatts,
-		vs.max_duration_days,
-		vs.built_year,
-		vs.tenders_number,
-		vs.total_crew_number,
-		vs.base_region_code,
-		vs.base_port_code
-
+		  vs.history_start_datetime,
+		  vs.history_end_datetime,
+		  vs.vessel_key,
+		  vs.flag_nationality_code,
+		  vs.overall_length_metres,
+		  vs.registered_length_metres,
+		  vs.draught_metres,
+		  vs.beam_metres,
+		  vs.gross_tonnes,
+		  vs.max_speed_knots,
+		  vs.service_speed_knots,
+		  vs.engine_kilowatts,
+		  vs.max_duration_days,
+		  vs.built_year,
+		  vs.tenders_number,
+		  vs.total_crew_number,
+		  vs.base_region_code,
+		  vs.base_port_code
 		from corporat..vs_vessel_history vs, tempdb..trophia_%s tt
-		where vs.vessel_key in (select distinct vessel_key from warehou..ce_trip_details td,tempdb..trophia_%s tt where tt.trip = td.trip) ;
-		'''%(self.name,self.name)
+		where vs.history_end_datetime >= '%s'
+		  and vs.history_start_datetime < '%s'
+		  and vs.vessel_key in (select distinct vessel_key
+		  from warehou..ce_trip_details td,tempdb..trophia_%s tt
+		  where tt.trip = td.trip)
+		go
+		'''%(self.name,self.begin,self.end,self.name)
 
-		sql += '''
+		mq = '''
 		/* *********************************************/
 		/*     MHR data    */
 		/* *********************************************/
 		select mq.perorg_key,
-		mq.month,
-		mq.year,
-		mq.stock_code,
-		mq.quantity
-
+		  mq.month,
+		  mq.year,
+		  mq.stock_code,
+		  mq.quantity
 		from warehou..mh_actual_mhr_quantity mq
-
 		where mq.from_datetime >= '01 Oct 2001'
-		and mq.from_datetime < getdate()
-		and mq.stock_code in (%s)
+		  and mq.from_datetime < getdate()
+		  and mq.stock_code in (%s)
+		go
 		'''%fishstocks_quoted
 
-		file('request.txt','w').write(email+'\n\n'+sql+'\n\n')
+		if not os.path.exists('request'): os.mkdir('request')
+		for item in ('email','tt','td','fi','ca','pr','la','vs','mq'):
+			content = locals()[item]
+			##Replace unecessary indents caused by Python indenting above
+			content = content.replace('\n\t\t','\n')
+			##Add a header
+			content = '''/* Generated for "%s" by %s (v%s) at %s UTC */\n'''%(self.name,__file__,version,datetime.datetime.utcnow())+content
+			##Decide on extension
+			ext = 'txt' if item=='email' else 'sql'
+			##Write to file
+			file('request/trophia_%s_%s.%s'%(self.name,item,ext),'w').write(content)
 
 	def loadFile(self,table,filetags=None,filename=None,format=None):
 		'''Function for reading a file into a table'''
