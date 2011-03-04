@@ -1925,14 +1925,35 @@ class Dataset:
 				report += Figurate(src=filename) 
 				
 		##landing
+		##Create a list of error checks in the order in which they appear
+		checks = (
+			('DAM','Drop if landing date/time is missing'),
+			('DAF','Drop if landing date/time is in future'),
+			('DES','Drop if invalid or unused destination codes'),
+			('SCR','Change invalid state code'),
+			('STI','Change if still invalid state code'),
+			('FSM','Drop if no matching stat area on trip for a fishstock'),
+			('DUP','Drop duplicates'),
+			('COM','Change missing conversion factors'),
+			('COV','Changes in conversion factors'),
+			('STD','Drop records for parts of fish'),
+			('GRR','Drop records based on greenweight range check'),
+		)
+		
 		report += H1('''4. Landings table''')
 		report += P('''In the following summaries of errors in the landings table, the reported landing weight (in tonnes) is for ALL species combined (unless explicitly by species or fishstock)''')
 
-		rows = self.db.Rows('''SELECT dropped,'Dropped',count(*),sum(green_weight)/1000 FROM landing WHERE dropped IS NOT NULL GROUP by dropped 
-				UNION SELECT changed,'Changed',count(*),sum(green_weight)/1000 FROM landing WHERE changed IS NOT NULL GROUP BY changed;''')
-		##Sort according to order they are addressed below
-		rows = sorted(rows,key=lambda row: [].index(row[0][:3]))
-		report += Tabulate("Summary of error checks on landing table",('Error','Action','Records','Landings (t)'),rows)
+		rows = self.db.Rows('''SELECT dropped,count(*),sum(green_weight)/1000 FROM landing WHERE dropped IS NOT NULL GROUP by dropped 
+				UNION SELECT changed,count(*),sum(green_weight)/1000 FROM landing WHERE changed IS NOT NULL GROUP BY changed;''')
+		table = []
+		for code,desc in checks:
+			events,landings = None,None
+			for row in rows:
+				if row[0][:3]==code:
+					events,landings = row[1:3]
+					break
+			table.append((code,desc,events,landings))
+		report += Tabulate("Summary of error checks on landing table. Checks are tabulated in the order that they are discussed in the following sections.",('Code','Description','Landing events','Landings (t)'),table)
 
 		report += H2('''4.1 Drop if landing date/time missing or in future (DAM & DAF)''')
 		report += P('''Records with either of these errors are dopped because this date is required for scaling catches.''')
@@ -1952,7 +1973,7 @@ class Dataset:
 		report += Tabulate('''Landings (t) by <i>destination_type</i> and <i>fishing_year</i>. This includes records dropped by the "DES" check but not those 
 							dropped by other checks.''',['Fishing year']+codes,rows)
 
-		report += H2('''4.2 Change common invalid state code (SCR)''')
+		report += H2('''4.2 Change invalid state code (SCR)''')
 		report += P('''Starr D.1.4 suggests "Find commonly entered invalid state codes and replace with correct state code"''')
 		report += Tabulate('''SCR errors by original and replacement state_code''',('Original','Replacement','Records','Landings (t)'),
 			self.db.Rows('''SELECT orig,new,count(*),sum(green_weight)/1000 FROM landing_changes,landing WHERE landing_changes.id = landing.id AND code=='SCR' GROUP BY orig,new;'''))
@@ -2026,7 +2047,8 @@ class Dataset:
 			self.db.Rows('''SELECT state_code,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='STD' GROUP BY state_code;'''))
 			
 		report += H2('''4.9 Check greenweight calculations (GRC,GRO,GRM): ''')
-		report += P('''Starr D.1.7 suggest "Check for missing data in the unit_num and unit_weight fields. Drop records where greenweight=0 or =NULL and either unit_num and unit_weight is missing.Missing greenweight can be estimated". In this implementation: 
+		report += P('''Starr D.1.7 suggest "Check for missing data in the unit_num and unit_weight fields. 
+		Drop records where greenweight=0 or =NULL and either unit_num and unit_weight is missing.Missing greenweight can be estimated". In this implementation: 
 		<ul>
 			<li>GRC = conv_factor*unit_num*unit_weight WHERE conv_factor IS NOT NULL</li>
 			<li>GRO = unit_num*unit_weight WHERE conv_factor IS NULL</li>
