@@ -103,6 +103,7 @@ class Dataset:
 			'request_extra_notes':'', ##Any extra notes to insert into email
 			
 			'extract':'extract', ##The name of the directory holding the dataextract
+			'extract_datetime_format':1, ##Flag for one of the datetime formats used. See the load method for how this is used
 			
 			'load_qmastats':'RIB',##Ribaldo (RIB) uses the general FMA boundaries for QMAs, so insert stats for this species. Usseful to override for FLA species codes eg SFL.
 			
@@ -377,7 +378,6 @@ class Dataset:
 		go
 		'''%(self.name)
 
-
 		ca = '''
 		/* *********************************************/
 		/*      Estimated catch for species of interest     */
@@ -396,7 +396,6 @@ class Dataset:
 		go
 		'''%(self.name,species_quoted)
 			
-
 		pr = '''
 		/* *********************************************/
 		/*      Processed catch for species of interest     */
@@ -427,7 +426,6 @@ class Dataset:
 		  and pr.species_code in (%s)
 		go
 		'''%(self.name,species_quoted)
-			
 			
 		la = '''
 		/* *********************************************/
@@ -466,7 +464,6 @@ class Dataset:
 		  and la.species_code in (%s)
 		go
 		'''%(self.name,species_quoted)
-
 
 		vs = '''
 		/* *********************************************/
@@ -605,11 +602,13 @@ class Dataset:
 				value = value.strip() ##This is necessary to remove line ends. It can not be done before here because for tab/space delimited files stripping will remove those delimiters.
 				if value == 'NULL' or value=='': value = None
 				elif 'datetime' in names[index]: 
-					##!Kludge to deal with datetime format = 20/02/1991 12:00:00.000 AM'
-					#bits = value.split()
-					#if len(bits)>0: value = datetime.datetime.strptime(bits[0],'%d/%m/%Y')
-					#else: value = None
-					value = datetime.datetime.strptime(value,'%b %d %Y %I:%M%p')
+					if self.extract_datetime_format==1:
+						value = datetime.datetime.strptime(value,'%b %d %Y %I:%M%p')
+					else:
+						##Deal with datetime format = 20/02/1991 12:00:00.000 AM
+						bits = value.split()
+						if len(bits)>0: value = datetime.datetime.strptime(bits[0],'%d/%m/%Y')
+						else: value = None
 				cleaned[index] = value
 				
 			values.append(cleaned)
@@ -618,7 +617,6 @@ class Dataset:
 		self.db.Cursor.executemany(sql,values)
 		self.db.Commit()
 
-
 	def load(self):
 		##Delete the existing database
 		if os.path.exists('database.db3'): os.remove('database.db3')
@@ -626,7 +624,7 @@ class Dataset:
 		##Create a new db connection and initialise it
 		self.db = Database('database.db3')
 		
-		self.db.Script(file('/Trophia/Tanga/Groomer/tangagroomer/database.sql').read())
+		self.db.Script(file('/Trophia/Tanga/Groomer/tangagroomer/dataset.sql').read())
 			
 		self.loadFile('trip_details')
 		self.loadFile('fishing_event',['effort'])
@@ -910,6 +908,7 @@ class Dataset:
 						
 						effort_units = {
 							'BLL':'total_hook_num',
+							'SN':'net_length'
 						}.get(method,'effort_num')
 						
 						##Calculate CPUE distribution for this method for each trip
@@ -1614,4 +1613,550 @@ class Dataset:
 		##'''SELECT changed,count(*) FROM fishing_event GROUP BY changed;''
 
 		self.db.Execute('''INSERT INTO status(task,done) VALUES('simplify',datetime('now'));''')
+		self.db.Commit()
+
+	def summarize(self,prefix=''):
+		'''Provides a summary of the data and the error checks that were done on it.'''
+
+		import rpy2.rpy_classic as rpy
+		rpy.set_default_mode(rpy.NO_CONVERSION)
+		from rpy2.rpy_classic import r as R
+		import math
+
+		import string
+		import cgi
+
+		class _Tag:
+		    '''Based on http://www.elfsternberg.com/2008/05/30/dwim-html-templating-in-python/'''
+		    def __init__(self, *content, **kw):
+			self.data = list(content)
+			self._attributes = {}
+			for i in kw: self._attributes[(i == 'klass' and 'class') or (i == 'fur' and 'for') or i] = kw[i]
+
+		    def render_content(self, content):
+			if type(content) == type(""):
+			    return content
+			if hasattr(content, '__iter__'):
+			    return string.join([self.render_content(i) for i in content], '')
+			return self.render_content(str(content))
+
+		    def __iadd__(self,value):
+			     self.data.append(value)
+			     return self
+
+		    def __str__(self):
+			tagname = self.__class__.__name__.lower()
+			return ('<%s' % tagname +
+			       (self._attributes and ' ' or '') +
+			       string.join(['%s="%s"' %
+					    (a, cgi.escape(str(self._attributes[a])))
+					    for a in self._attributes], ' ') +
+			       '>' +
+			       self.render_content(self.data) +
+			       '</%s>\n' % tagname)
+
+		class Html:
+			def __init__(self,filename):
+				self.out = file(filename,'w')
+					
+			def __iadd__(self,value):
+				self.out.write(str(value))
+				self.out.flush()
+				return self
+				
+		class Head(_Tag): pass
+		class Body(_Tag): pass
+		class Title(_Tag): pass
+		class Div(_Tag): pass
+			
+		class H(_Tag):
+			def __init__(self, content, **kw):
+				_Tag.__init__(self,'%s%s'%(prefix,content),**kw)
+		class H1(H): pass
+		class H2(H): pass
+		class H3(H): pass
+		class H4(H): pass
+			
+		class P(_Tag): pass
+		class Br(_Tag): pass	
+		class Img(_Tag): pass
+		class Table(_Tag): pass
+		class Caption(_Tag): pass	
+		class TR(_Tag): pass
+		class TD(_Tag): pass	
+		class TH(_Tag): pass		
+
+		class TableIndexHolder:
+			TableIndex = 0
+		def Tabulate(caption,header,rows):
+			TableIndexHolder.TableIndex += 1
+			div = Div(P('Table %s%s: %s'%(prefix,TableIndexHolder.TableIndex,caption),klass='caption'),klass='table')
+			table = Table()
+			tr = TR()
+			for index,item in enumerate(header):
+				if index==0: klass = 'left'
+				else: klass = 'right'
+				tr += TD(item,klass=klass)
+			table += tr
+			if len(rows)>0:
+				##Determine the best format for column
+				formats = ['%s']*len(rows[0])
+				klasses = ['none']*len(rows[0])
+				for col in range(len(rows[0])):
+					hi = max([row[col] for row in rows])
+					if type(hi) is float:
+						digits = len(str(int(hi)))
+						decimals = 4-digits
+						if decimals>0: formats[col] = '%%.%if'%decimals
+						else: formats[col] = '%d'
+						#klasses[col] = 'right'
+					else:
+						formats[col] = '%s'
+						#klasses[col] = 'left'
+					##Text alignment rules for FARs are 1st column left, others right
+					klasses[col] = 'left' if col==0 else 'right'
+				for row in rows:
+					tr = TR()
+					for col,value in enumerate(row): 
+						format, klass= formats[col],klasses[col]
+						if value is None: show = '-'
+						else: show = format%value
+						tr += TD(show,klass=klass)
+					table += tr
+			div += table
+			return div
+
+		class FigureIndexHolder:
+			FigureIndex = 0
+		def Figurate(filename,caption="No caption defined"):
+			FigureIndexHolder.FigureIndex += 1
+			return Div(Img(src=filename),P('Figure %s%s: %s'%(prefix,FigureIndexHolder.FigureIndex,caption),klass='caption'),klass='figure')
+			
+		def Quantiles(values,at=[0.05,0.5,0.95]):
+			'''Calculate quantiles of a vector'''
+			qs = []
+			for p in at: 
+				index = int(len(values)*p)-1
+				qs.append(values[index])
+			return qs
+			
+		def Filename(filename):
+			'''Create a valid filename from a string'''
+			return str(filename.replace(' ','_').replace('/','di').replace('>','gt').replace('>=','ge').replace('<','lt').replace('<=','le').replace('"','').replace("'",''))
+			
+		def Histogram(table,field,where='',transform='',xlab='',ylab='',lines=[],caption='No caption defined'):
+			'''Create a histogram for a field in a table'''
+			sql = '''SELECT %s FROM %s  WHERE %s IS NOT NULL'''%(field,table,field)
+			wheres = []
+			if 'log' in transform: wheres.append('''%s>0'''%field)
+			if len(where)>0: wheres.append(where)
+			if len(wheres)>0: sql += ''' AND ''' + ''' AND '''.join(wheres)
+			values = self.db.Values(sql)
+			values.sort()
+			n = len(values)
+			
+			if n<10: return P('Only %s values, not plotting a histogram'%n)
+				
+			p1,p5,median,p95,p99 = Quantiles(values,at=[0.01,0.05,0.5,0.95,0.99])
+			geomean = math.exp(sum([math.log(value) for value in values if value>0])/len(values))
+			#print p1,p5,median,p95,p99,geomean
+			
+			if transform=='log10': func = math.log10
+			else: func = lambda x: x
+			values = [func(value) for value in values if value>=p1 and value<=p99]
+			lines = [func(line) for line in lines]
+			
+			if len(values)<10: return P('Only %s values, not plotting a histogram'%len(values))
+
+			if xlab=='': xlab = field
+			if transform!='': xlab = '%s (%s)'%(transform,xlab)
+			if ylab=='': ylab = 'Records'
+				
+			filename = Filename('%s %s %s hist.png'%(table,field,where))
+			R.png(filename,600,400)
+			R.hist(values,breaks=30,main='',xlab=xlab,ylab=ylab,col='grey')
+			R.legend("topright",legend=['N=%i'%n,'P5=%.2f'%p5,'Med=%.2f'%median,'GM=%.2f'%geomean,'P95=%.2f'%p95],bty='n')
+			for line in lines: R.abline(v=line,lty=2)
+			R.dev_off()
+			
+			return Figurate(filename,caption)
+			
+		def Scatterplot(table,x,y,where='',transform='',xlab='',ylab='',lines=[],caption='No caption defined'):
+			sql = '''SELECT %s,%s FROM %s WHERE %s IS NOT NULL AND %s IS NOT NULL'''%(x,y,table,x,y)
+			wheres = []
+			if 'log' in transform: wheres.append('''%s>0 AND %s>0'''%(x,y))
+			if len(where)>0: wheres.append(where)
+			if len(wheres)>0: sql += ''' AND ''' + ''' AND '''.join(wheres)
+			rows = self.db.Rows(sql)
+				
+			filename = Filename('%s %s %s %s %s scat.png'%(table,x,y,transform,where))
+			
+			if transform=='log10': func = math.log10
+			else: func = lambda x: x
+			rows = [(func(x),func(y)) for x,y in rows]
+
+			if xlab=='': xlab = x
+			if ylab=='': ylab = y
+			if transform!='': 
+				xlab = '%s (%s)'%(transform,xlab)
+				ylab = '%s (%s)'%(transform,ylab)
+			R.png(filename,600,400)
+			if len(rows)>0:
+				R.plot([x for x,y in rows],[y for x,y in rows],xlab=xlab,ylab=ylab)
+				for line in lines: R.abline(a=line[0],b=line[1],lty=2)
+			R.dev_off()
+			
+			return Figurate(filename,caption)	
+
+		fishing_years = range(1990,datetime.datetime.now().year-1)
+		
+		#!todo Not working because fishing_year not yet defined - just move to sumarize
+		#report += Tabulate('Alternative catch allocations for %s by fishing year'%species,('Fishing year','Estimated','Equal','Proportional'),self.db.Rows('''SELECT fishing_year,sum(%s_est)/1000,sum(%s_equ)/1000,sum(%s_prop)/1000 FROM fishing_event GROUP BY fishing_year;'''%(species,species,species)))
+		#report += Tabulate('Proportional allocation methods for %s by fishing year'%species,('Fishing year','Using estimated','Using effort','Equal'),self.db.Rows('''SELECT fishing_year,sum(%s_prop_method==1),sum(%s_prop_method=2),sum(%s_prop_method==3) FROM fishing_event GROUP BY fishing_year;'''%(species,species,species)))
+			
+		##BPT and MPT
+		##The is a table called "ce_event_assoc_object" which records the vessel_key of the other vessel in a pair trawling pair.
+		##This would be required to do better summaries of this.
+		##Summarize trips that had estimated catch but no landings by year
+		##Problem arises in estimated_catches.
+		
+		if not os.path.exists('summarize'): os.mkdir('summarize')
+		report = Html('summarize/index.html')
+		report += '<html>'
+		report += Head('''
+			<style type="text/css">
+				body {
+					font: 11pt "Times New Roman",Georgia,serif;
+					text-align: justify; 
+					width: 16cm;
+				}
+				p.title, h1, h2, h3, h4 {
+					font: 11pt Arial,sans-serif;
+					font-weight:bold;
+				}
+				p.caption {
+					font-weight:bold;
+					text-align:left;
+				}
+				table {
+					width:95%;
+				}
+				td {
+					font-size: 10pt;
+				}
+				table .left {
+					text-align:left;
+				}
+				table .right {
+					text-align:right;
+				}
+			</style>
+		''')
+		report += '<body>'
+		
+		report += P('''APPENDIX %s. DATA EXTRACTION, GROOMING AND ALLOCATION'''%prefix,klass='title')
+		
+		report += P('''This appendix summarises the extraction, grooming and allocation of landings for the data set.
+		The first section describes the data extract obtained from the Ministry of Fisheries. There are then sections for each database table
+		which describe the error checks done. Each error check is referred to using a three letter code and the section
+		for each table usually begins with a table that provides an overview of the checks done.
+		Many of the error checks are based on those described in Starr (2010) and in those cases the relevant paragraph is denoted (e.g. Starr D.1.9).
+		Next is a section describing the allocation of landings to fishing events. Finally, there is a section in which summarises the grooming and allocation done.''')
+
+		report += H1('''1. Data extract''')
+		
+		p =  P('''Catch and effort data was obtained for fishing trips that occurred between %s and %s, and that '''%(self.begin,self.end))
+		species = ', '.join(self.species)
+		fishstocks=', '.join([', '.join(fishstocks) for fishstocks in self.fishstocks.values()])
+		if fishstocks: p += '''landed to %s'''%(fishstocks)
+		criteria = []
+		if len(self.statareas): criteria.append('''<li>were in statistical area(s) %s,</li>'''%(', '.join(self.statareas)))
+		if len(self.methods): criteria.append('''<li>used method(s) %s,</li>'''%(', '.join(self.methods)))
+		if len(self.targets): criteria.append('''<li>targeted species %s</li>'''%(', '.join(self.targets)))
+		if hasattr(self,'targets_not') and len(self.targets_not): criteria.append('''<li>did not target species %s</li>'''%(', '.join(self.targets_not)))
+		if len(criteria)>0: p += ''', or had fishing events that:<ul>%s</ul>\n''' %('<b>and</b>'.join(criteria))
+		report += p
+		
+		p = P('''For those trips we would obtained all effort data as well as landings and estimated catch data for the species %s.  
+			In addition, monthly harvest return (MHR) data for all available months for the above fishstocks was obtained by month, client and Fishstock.'''%species)
+		if self.request_extra_notes: p += '''We also requested that:"'''+self.request_extra_notes+'"'
+		report += p
+		
+		##trip_details
+		report += H1('''2. Trip details table''')
+		report += P('''The table <i>trip_details</i> contains one record for each trip number (assigned by MFish) with fields for vessel, and start and end dates and times.''')
+
+		report += H2('''2.1 Trip date check (TRD)''')
+		report += P('''Starr D.1.8 describes a method for calculating the "best date" for a trip.  This involves determining the length (in days) of each trip,  
+		calculating the 95th percentile of trip length for each type of form
+		and using that as the basis for determining if the trip end date is likely.  The field <i>best_date</i> which is created is not actually used for characterization and CPUE analyses 
+		because the field <i>fishing_event.start_datetime</i> is used instead.  However, the following summaries may indicated potential problems with the asignment of a trip number''')
+		report += Histogram('trip_details','trip_length',xlab='Trip length (days)',ylab='Trips',
+					caption='Frequency distibution of trip length for all trips in dataset.')
+		
+		##estimated_subcatch
+		report += H1('''3. Estimated catch table''')
+
+		num = self.db.Value('''SELECT count(species) FROM estimated_subcatch_CTN;''')
+		if num>0:
+			report += H2('''3.1 Estimated catch entered as weight instead of numbers check (CTN)''')
+			report += P('''For a few species, estimated catch should be recorded in numbers rather than weights.  This check is designed to find and change those records 
+			where the weight was recorded instead of numbers.  This is done by comparing the estimated catch with the landings for each trip for each species. If the ratio of landings to estimated catch
+			is less than a specified threshold then the estimated catch is assumed to have been mis-reported as a catch weight and is adjusted by diving by a specified average weight.''')
+
+			for species in self.db.Values('''SELECT species FROM estimated_subcatch_CTN;'''):
+				report += H3(species)
+				
+				values = self.db.Values('''SELECT sum_green_weight/sum_catch_weight FROM estimated_subcatch_CTN_%s WHERE sum_catch_weight>0 AND sum_green_weight>0;'''%(species))
+				values.sort()
+				p1,p5,median,p95,p99 = Quantiles(values,at=[0.01,0.05,0.5,0.95,0.99])
+				geomean = math.exp(sum([math.log(value) for value in values])/len(values))
+				
+				filename = str('summarize/estimated_subcatch_CTN_%s_hist.png'%(species))
+				R.png(filename,600,400)
+				R.hist([math.log10(value) for value in values if value>=p1 and value<=p99],breaks=30,main='',xlab='log10 (Landed green weight / Estimated catch)',ylab='Trips',col='grey')
+				R.legend("topright",legend=['5th percentile = %.2f'%p5,'Median = %.2f'%median,'Geometric mean = %.2f'%geomean,'95th percentile = %.2f'%p95],bty='n')
+				if self.groom_estimated_subcatch_catch is not None: 
+					minimum,average = self.groom_estimated_subcatch_catch[species]
+					R.abline(v=(math.log10(minimum),math.log10(average)),lty=(2,3),col=('red','blue'))
+					R.legend("topleft",legend=['Threshold = %s'%minimum,'Average = %s'%average],lty=(2,3),col=('red','blue'),bty='n')
+				R.dev_off()
+				
+				report += Figurate(src=filename) 
+				
+		##landing
+		report += H1('''4. Landings table''')
+		report += P('''In the following summaries of errors in the landings table, the reported landing weight (in tonnes) is for ALL species combined (unless explicitly by species or fishstock)''')
+
+		rows = self.db.Rows('''SELECT dropped,'Dropped',count(*),sum(green_weight)/1000 FROM landing WHERE dropped IS NOT NULL GROUP by dropped 
+				UNION SELECT changed,'Changed',count(*),sum(green_weight)/1000 FROM landing WHERE changed IS NOT NULL GROUP BY changed;''')
+		##Sort according to order they are addressed below
+		rows = sorted(rows,key=lambda row: [].index(row[0][:3]))
+		report += Tabulate("Summary of error checks on landing table",('Error','Action','Records','Landings (t)'),rows)
+
+		report += H2('''4.1 Drop if landing date/time missing or in future (DAM & DAF)''')
+		report += P('''Records with either of these errors are dopped because this date is required for scaling catches.''')
+		report += Tabulate('DAF errors by landing_datetime date',('Month','Records','Landings (t)'),
+			self.db.Rows('''SELECT strftime('%Y-%m',landing_datetime),count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='DAF' GROUP BY strftime('%Y-%m',landing_datetime)'''))
+
+		report += H2('''4.2 Drop if invalid or unused destination codes (DES)''')
+		report += P('''Starr D.1.1 suggests dropping records with any destination_type that is not in the list 'A','C','E','F','H','L','O','S','U','W'.''')
+		report += Tabulate('''DES errors by destination_type''',('Code','Records','Landings (t)'),
+			self.db.Rows('''SELECT destination_type,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='DES' GROUP BY destination_type;'''))
+		codes = self.db.Values('''SELECT DISTINCT destination_type FROM landing  WHERE destination_type IS NOT NULL AND (dropped IS NULL OR dropped=='DES');''')
+		rows = []
+		for fy in fishing_years:
+			row = [fy]
+			for code in codes: row.append(self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE destination_type==? AND fishing_year==? AND (dropped IS NULL OR dropped=='DES');''',(str(code),fy)))
+			rows.append(row)
+		report += Tabulate('''Landings (t) by <i>destination_type</i> and <i>fishing_year</i>. This includes records dropped by the "DES" check but not those 
+							dropped by other checks.''',['Fishing year']+codes,rows)
+
+		report += H2('''4.2 Change common invalid state code (SCR)''')
+		report += P('''Starr D.1.4 suggests "Find commonly entered invalid state codes and replace with correct state code"''')
+		report += Tabulate('''SCR errors by original and replacement state_code''',('Original','Replacement','Records','Landings (t)'),
+			self.db.Rows('''SELECT orig,new,count(*),sum(green_weight)/1000 FROM landing_changes,landing WHERE landing_changes.id = landing.id AND code=='SCR' GROUP BY orig,new;'''))
+		codes = self.db.Values('''SELECT DISTINCT state_code FROM landing  WHERE state_code IS NOT NULL AND dropped IS NULL;''')
+		rows = []
+		for fy in fishing_years:
+			row = [fy]
+			for code in codes: row.append(self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE state_code==? AND fishing_year==? AND dropped IS NULL;''',(str(code),fy)))
+			rows.append(row)
+		report += Tabulate('''Landings (t) by <i>state_code</i> and <i>fishing_year</i>.''',
+						['Fishing year']+codes,rows)
+			
+		report += H2('''4.3 Change if still invalid state code (STI)''')
+		report += P('''Set state_code to NULL if still invalid (ie not changed in SCR).  Valid state codes are: 'GRE','GUT','HGU','DRE','FIL','SKF','USK','SUR','SUR','TSK','TRF','DSC','DVC','MEA','SCT','RLT','TEN','FIN',
+			'LIV','MKF','MGU','HGT','HGF','GGU','SHU','ROE','HDS','HET','FIT','SHF','MBS','MBH','MEB','FLP','BEA','LIB',
+			'CHK','LUG','SWB','WIN','OIL','TNB','GBP'.''')
+		report += Tabulate('''STI errors by original and replacement state_code''',('Original','Records','Landings (t)'),
+			self.db.Rows('''SELECT orig,count(*),sum(green_weight)/1000 FROM landing_changes,landing WHERE landing_changes.id = landing.id AND code=='STI' GROUP BY orig;'''))
+			
+		report += H2('''4.4 Drop if no matching stat area on trip for a fishstock (FSM)''')
+		report += P('''Apart from being inconsistent, these trips need to be dropped because landings can not be allocated properly''')
+		report += Tabulate('FSM errors by fishstock',('Fishstock','Records','Landings (t)'),
+			self.db.Rows('''SELECT fishstock_code,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='FSM' GROUP BY fishstock_code'''))
+		#report += Tabulate('For trips with FSM errors the stat area recorded by fishstock (limited to 100)',('Fishstock','Stat area','Trips'),
+		#	self.db.Rows('''SELECT fishstock_code,start_stats_area_code,count(*) FROM landing_FSM GROUP BY fishstock_code,start_stats_area_code ORDER BY count(*) DESC LIMIT 100;'''))
+		#report += Tabulate('For trips with FSM errors summary of the port of landing (limited to 250)',('Fishstock','Stat area','Port','Count'),
+		#	self.db.Rows('''SELECT lfsm.fishstock_code,start_stats_area_code,landing_name,count(*) FROM landing_FSM AS lfsm LEFT JOIN landing USING (trip) 
+		#		GROUP BY lfsm.fishstock_code,start_stats_area_code,landing_name ORDER BY count(*) DESC LIMIT 250;'''))
+		if 0:
+			for row in self.db.Rows('''SELECT species,start_stats_area_code,fishstock_code,count(*) FROM fishing_event_FSM GROUP BY species,start_stats_area_code,fishstock_code ORDER BY count(*) DESC;'''): print row
+				
+			for row in self.db.Rows('''SELECT fishstock_code,landing_name,count(*),sum(green_weight) FROM landing WHERE dropped=='FSM' GROUP BY fishstock_code,landing_name ORDER BY sum(green_weight) DESC;'''):
+				print row
+
+		report += H2('''4.5 Drop duplicates (DUP)''')
+		report += P('''Starr D.1.2 suggests "Look for duplicate landings on multiple (CELR and CLR) forms. Keep only a single version if determined that the records are duplicated".
+		For this implementation, duplicates are those where the following field are exactly the same: vessel_key, landing_datetime, fishstock_code, state_code, destination_type, unit_type, unit_num, unit_weight, green_weight. 
+		If supliocates are found then drop all records other than the CELR record.''')
+		report += Tabulate('''DUP errors by fishstock_code,state_code,destination_type''',('Fishstock','State','Destination','Records','Landings (t)'),
+			self.db.Rows('''SELECT fishstock_code,state_code,destination_type,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='DUP' GROUP BY fishstock_code,state_code,destination_type;'''))
+			
+		report += H2('''4.6 Change missing conversion factors (COM)''')
+		report += P('''Starr D.1.3 suggests "Find missing conversion factor fields and insert correct value for relevant state code and fishing year.Missing fields can be inferred from the median of the non-missing fields."
+		In this implementation we replace missing values with the median over all fishing_years for that state_code.''')
+		report += Tabulate('''COM errors by state_code and replacement conversion factor''',('Sate','Replacement','Records','Landings (t)'),
+			self.db.Rows('''SELECT state_code,new,count(*),sum(green_weight)/1000 FROM landing_changes,landing WHERE landing_changes.id = landing.id AND code=='COM' GROUP BY state_code,new;'''))
+			
+		report += H2('''4.7 Examine for changes in conversion factor (COV)''')
+		report += P('''The following table shows state codes that have more than one conversion factor recorded.''')
+		report += Tabulate('''Conversion factors used for each state code''',('Species','State','Conversion factor','Records','Landings (t)'),
+			self.db.Rows('''SELECT species_code,state_code,conv_factor,count(*),sum(green_weight)/1000 FROM landing 
+			WHERE species_code IS NOT NULL AND state_code IS NOT NULL AND conv_factor IS NOT NULL GROUP BY species_code,state_code,conv_factor;'''))
+
+		##Table of median conversion factor by fishing_year and state_code
+		states = self.db.Values('''SELECT state_code FROM landing WHERE state_code IS NOT NULL  AND conv_factor IS NOT NULL GROUP BY state_code HAVING count(*)>=100 ORDER BY count(*) DESC;''')
+		medians = self.db.Rows('''SELECT fishing_year,state_code,median(conv_factor) FROM landing WHERE state_code IS NOT NULL  AND conv_factor IS NOT NULL GROUP BY fishing_year,state_code;''')
+		medians = dict(zip(['%s-%s'%(y,s) for y,s,m in medians],[m for y,s,m in medians]))
+		rows = []
+		for fy in fishing_years:
+			row = [fy]
+			for state in states:
+				try: median = medians['%s-%s'%(fy,state)]
+				except: median = ''
+				row.append(median)
+			rows.append(row)
+		report += Tabulate('The median conversion factor in each fishing year by processed state (for states having at least 100 records)',['Fishing year']+states,rows)
+
+		report += H2('''4.8 Drop records for 'bits' of fish (STD)''')
+		report += P('''Starr D.1.6 suggests "Drop landings where state code is FIN,FLP,SHF or ROE and there is more than one record for the trip/Fishstock combination."''')
+		report += Tabulate('''STD errors by state_code''',('State','Records','Landings (t)'),
+			self.db.Rows('''SELECT state_code,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='STD' GROUP BY state_code;'''))
+			
+		report += H2('''4.9 Check greenweight calculations (GRC,GRO,GRM): ''')
+		report += P('''Starr D.1.7 suggest "Check for missing data in the unit_num and unit_weight fields. Drop records where greenweight=0 or =NULL and either unit_num and unit_weight is missing.Missing greenweight can be estimated". In this implementation: 
+		<ul>
+			<li>GRC = conv_factor*unit_num*unit_weight WHERE conv_factor IS NOT NULL</li>
+			<li>GRO = unit_num*unit_weight WHERE conv_factor IS NULL</li>
+			<li>GRM = drop records where green_weight is still zero or null</li>
+		</ul>
+		See summary table above for record and landing asscoiated with each.
+		''')
+			
+		report += H2('''4.10 Green weight range check (GRR)''')
+		for index,species in enumerate(self.db.Values('''SELECT DISTINCT species FROM landing_GRR;''')):
+
+			report += H3('4.10.%i %s'%(index+1,species))
+			
+			##Get first method for this species (the same estimated & landing info is in each "landing_GRR_<species>_<method>" table so it does not matter which one it is)
+			method = self.db.Value('''SELECT method FROM landing_GRR WHERE species==? LIMIT 1;''',[species])
+			##Get the estimated & landing info from this table
+			row = self.db.Rows('''SELECT trip, sum_green_weight, sum_calc_weight, sum_est_weight, ratio_green_calc, ratio_green_est FROM landing_GRR_%s_%s;'''%(species,method))
+			
+			##Histograms of catch/landings ratios
+			for field,label in [
+				('ratio_green_calc','Landed green weight/Landed calculated weight'),
+				('ratio_green_est','Landed green weight/Estimated catch'),
+			]: report += Histogram('landing_GRR_%s_%s'%(species,method),field,xlab=label,lines=(0.75,1.33,4),
+							caption="Frequency distribution of %s for species %s and method %s"%(label.lower(),species,method))
+			
+			for method,landings_threshold,cpue_threshold in self.db.Rows('''SELECT method,landings_threshold,cpue_threshold FROM landing_GRR WHERE species=='%s';'''%species):
+			
+				table = 'landing_GRR_%s_%s'%(species,method)
+				
+				report += H4(method)
+				report += P('Landings threshold: %.2f<br>CPUE threshold: %.2f'%(landings_threshold,cpue_threshold))
+				
+				report += Histogram(table,'sum_green_weight',where='sum_effort>0',lines=[landings_threshold],transform='log10',xlab='Landings',ylab='Trips',
+					caption='Landings for trips that used %s and landed %s.'%(method,species))
+				report += Histogram(table,'cpue',where='ok=1',lines=[cpue_threshold],transform='log10',xlab='CPUE',ylab='Trips',
+					caption='CPUE for trips that used %s and landed %s and which had the ratio of green_weight to estimated_weight between 0.75 and 1.33.'%(method,species))
+				
+				##Summarise those trips that were dropped
+				dropped = self.db.Rows('''SELECT * FROM %s WHERE dropped==1;'''%table)
+				if len(dropped)>0: report += Tabulate('Details of trips dropped',[col[0] for col in self.db.Cursor.description],dropped)
+				else: report += 'No trips dropped by this check.'
+
+		##fishing_event
+		report += H1('''5. Fishing event table''')
+
+		##Need to decide on a species that is used as a basis for reporting estimated catches.  Use the first of difinition.species
+		species = self.species[0]
+
+		report += Tabulate('Summary of error checks on fishing_event table',('Error','Action','Records','Catch (t)'),
+			self.db.Rows('''SELECT dropped,'Dropped',count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE dropped IS NOT NULL GROUP by dropped 
+				UNION SELECT changed,'Changed',count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE changed IS NOT NULL GROUP BY changed;'''%locals()))
+
+		report += H2('''5.1 Missing fishing method (PMR & PRM)''')
+		report += P('''Starr D.2.1 suggests "Look for missing method codes by trip. a) drop the entire trip if more than one method was used for the trip; b) if a single method trip, insert the method into the missing field."''')
+		report += Tabulate('''PMR errors by replacement primary_method''',('Method','Records','Catch (t)'),
+			self.db.Rows('''SELECT primary_method,count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE changed=='PMR' GROUP BY primary_method;'''%locals()))
+			
+		report += H2('''5.2 Missing statistical area (SAR & SAM)''')
+		report += P('''Starr D.2.2 suggests "Search for missing statistical area fields. a) drop the entire trip if all statistical areas are missing in the trip; b) substitute the 'predominant' (most frequent) statistical area for the trip for trips which report the statistical area fished in other records.""''')
+		report += Tabulate('''SAR errors by replacement start_stats_area_code''',('Statistical area','Records','Catch (t)'),
+			self.db.Rows('''SELECT start_stats_area_code,count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE changed=='SAR' GROUP BY start_stats_area_code;'''%locals()))
+			
+		report += H2('''5.3 Missing target species (TAR & TAM)''')
+		report += P('''Search for missing target species fields. a) drop the entire trip if all target species are missing in the trip; b) substitute the 'predominant' (most frequent) target species for the trip for trips which report the target species in other records''')
+		report += Tabulate('''TAR errors by replacement target_species''',('Statistical area','Records','Catch (t)'),
+			self.db.Rows('''SELECT target_species,count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE changed=='TAR' GROUP BY target_species;'''%locals()))
+			
+		report += H2('''5.4 Positions(lat/lon) outside of statistical area (POS)''')
+		report += P('''Set lat or lon to null if they are outside of the bounding box of the statistical area."''')
+			
+		report += H2('''5.5 Change outlier effort values (EFF)''')
+		report += P('''See Starr D.2.4 "Operate grooming procedure on effort fields by method of capture and form type to truncate outlier values."''')
+		report += Tabulate('''EFF changes by effor field, form_type and primary_method''',('Effort field','Form type','Method','Records not null','Records not null (%)','Min','10th percentile','Median','90th percentile','Max','Floor','Multiplier','Lower','Upper','Substitutions (%)'),
+			self.db.Rows('''SELECT * FROM fishing_event_EFF;'''))
+			
+		report += H1('''6. Allocation of landings to fishing events''')
+
+		report += P('''Landings are allocated to fishing events following the Starr (2010) method. Prior to allocation, records in the fishing_event table are dropped using two checks STR and OTH''')
+
+		report += H2('''6.1. Statistical areas associated with other Fishstocks (OTH)''')
+		report += P('''Event in an external statistical area''')
+		report += Tabulate('OTH:Records dropped',('Statistical area','Records'),self.db.Rows('''SELECT start_stats_area_code,count(*) FROM fishing_event WHERE dropped=="OTH" GROUP BY start_stats_area_code;'''))
+
+		report += H2('''6.2 Straddling statistical areas with landings of other Fishstocks (STR)''')
+		report += P('''Trip fished in a straddling statistical area and landed to a fishstock other than the ones being allocated for''')
+		for species in self.db.Values('''SELECT DISTINCT species FROM fishing_event_STR'''):
+			report += H3(species)
+			report += Tabulate('''Numbers of trips that fished in straddling statistical areas and that landed to another Fishstock. None means that one of the Fishstocks of interest (i.e. none 'other')''',('Statistical area','Other Fishstock','Trips'),
+				self.db.Rows('''SELECT stat,other,count(*) FROM fishing_event_STR GROUP BY stat,other'''))
+		report += Tabulate('STR:Records dropped',('Code','Records','Landings (t)'),self.db.Rows('''SELECT dropped,count(*),sum(green_weight)/1000 FROM landing WHERE dropped LIKE "STR %" GROUP BY dropped;'''))
+
+		report += H1('''6.3 Estimated versus allocated''')
+		for species in self.species:
+			report += H2(species)
+			report += Histogram('fishing_event','%s_est/%s_prop'%(species,species),where='dropped IS NULL',ylab='Events',xlab='Estimated catches/Allocated landings')
+			report += Scatterplot('fishing_event','%s_est'%species,'%s_prop'%species,where='dropped IS NULL',xlab='Estimated catches',ylab='Allocated landings',lines=[(0,1)])
+			report += Scatterplot('fishing_event','%s_est'%species,'%s_prop'%species,transform='log10',where='dropped IS NULL',xlab='Estimated catches',ylab='Allocated landings',lines=[(0,1)])
+					
+		report += H1('''8. Summary of grooming and allocation''')
+		##Table of landings dropped by check
+		for fishstock in self.fishstocks[self.species[0]]:
+			species = fishstock[:3]
+			values = {}
+			checks = ['DAM','DES','DUP','STD', 'GRR','FSM','STR']
+			values_check = self.db.Rows('''SELECT fishing_year,substr(dropped,1,3),sum(green_weight)/1000 FROM landing WHERE fishstock_code=='%s' GROUP BY fishing_year,substr(dropped,1,3);'''%fishstock)
+			values.update(dict(zip(['%s-%s'%(y,s) for y,s,m in values_check],[m for y,s,m in values_check])))
+			rows = []
+			for fy in fishing_years:
+				row = [
+					fy,
+					self.db.Value('''SELECT landings FROM history WHERE fishstock=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
+					self.db.Value('''SELECT sum(quantity)/1000 FROM qmr WHERE fishstock=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
+					self.db.Value('''SELECT sum(quantity)/1000 FROM mhr WHERE stock_code=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
+					self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE fishstock_code=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
+				]
+				for check in checks:
+					try: value = round(values['%s-%s'%(fy,check)],2)
+					except KeyError: value = '-'
+					except TypeError: value = '-' ##Value is None
+					row.append(value)
+				row.extend([
+					self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE dropped IS NULL AND fishstock_code=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
+					self.db.Value('''SELECT sum(%s_est)/1000 FROM fishing_event WHERE dropped IS NULL AND trip IN (SELECT trip FROM landing WHERE fishstock_code=='%s' AND fishing_year==%s);'''%(species,fishstock,fy)),
+					self.db.Value('''SELECT sum(%s_prop)/1000 FROM fishing_event WHERE dropped IS NULL AND trip IN (SELECT trip FROM landing WHERE fishstock_code=='%s' AND fishing_year==%s);'''%(species,fishstock,fy)),
+					self.db.Value('''SELECT sum(%s_prop)/1000 FROM fishing_event WHERE dropped IS NULL AND start_stats_area_code IN (SELECT stat FROM qmastats WHERE qma=="%s") AND fishing_year==%s;'''%(species,fishstock,fy))
+				])
+				rows.append(row)
+			report += Tabulate('Landings (t) dropped by check for %s'%fishstock,['Fishing year','Published','QMR','MHR','Original(all data)']+checks+['Remaining(dropped==NULL)','Fishing events (est)', 'Fishing events (alloc)','Fishing events (alloc,separ)'],rows)
+
+		report += '</body></html>'
+
+		self.db.Execute('''INSERT INTO status(task,done) VALUES('summarize',datetime('now'));''')
 		self.db.Commit()

@@ -91,7 +91,8 @@ CREATE TABLE estimated_subcatch (
 	version_seqno INTEGER,
 	group_key INTEGER,
 	species_code TEXT,
-	catch_weight REAL
+	catch_weight REAL,
+	trip INTEGER
 );
 CREATE INDEX estimated_subcatch_event_key_version_seqno ON estimated_subcatch(event_key,version_seqno);
 CREATE INDEX estimated_subcatch_event_key ON estimated_subcatch(event_key);
