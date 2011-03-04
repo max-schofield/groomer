@@ -652,9 +652,26 @@ class Dataset:
 	def groom(self):
 
 		lastValidDate = datetime.datetime.strptime(self.end,'%d %b %Y').strftime('%Y-%m-%d')
+		
+		if 0:
+			##Calculate date and fishing_year (used for some grooming)
+			self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN date DATETIME;''')  
+			self.db.Execute('''UPDATE fishing_event SET date=strftime('%Y-%m-%d',start_datetime);''')
+			self.db.Execute('''CREATE INDEX IF NOT EXISTS fishing_event_date ON fishing_event(date);''')
 
-		self.db.Execute('''CREATE TABLE IF NOT EXISTS checks (done DATETIME,"table" TEXT, code TEXT, action TEXT, field TEXT, new TEXT,clause TEXT);''')
-		self.db.Execute('''DELETE FROM checks;''')
+			self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN fishing_year INTEGER;''') 
+			self.db.Execute('''UPDATE fishing_event SET fishing_year=strftime('%Y',date);''')
+			self.db.Execute('''UPDATE fishing_event SET fishing_year=fishing_year+1 WHERE strftime('%m',date)>="10";''')
+			self.db.Execute('''CREATE INDEX IF NOT EXISTS fishing_event_fishing_year ON fishing_event(fishing_year);''')
+
+			self.db.Alter('''ALTER TABLE landing ADD COLUMN fishing_year INTEGER;''') 
+			self.db.Execute('''UPDATE landing SET fishing_year=strftime('%Y',landing_datetime);''')
+			self.db.Execute('''UPDATE landing SET fishing_year=fishing_year+1 WHERE strftime('%m',landing_datetime)>="10";''')
+			self.db.Execute('''CREATE INDEX IF NOT EXISTS landing_fishing_year ON landing(fishing_year);''')
+
+			self.db.Execute('''CREATE TABLE IF NOT EXISTS checks (done DATETIME,"table" TEXT, code TEXT, action TEXT, field TEXT, new TEXT,clause TEXT);''')
+			self.db.Execute('''DELETE FROM checks;''')
+		
 		def Check(table,code,action,field='NULL',to='NULL',clause='NULL'):
 			self.db.Execute('''INSERT INTO checks VALUES(datetime('now'),'%(table)s','%(code)s','%(action)s','%(field)s',"%(to)s","%(clause)s");'''%vars())
 			
@@ -727,6 +744,7 @@ class Dataset:
 		if self.groom_estimated_subcatch:
 			## Done before landings to correct any estimated catches before comparing to landings
 			Init('estimated_subcatch')
+			
 			##CTN: check estimated catch if groom_estimated_subcatch_catch is specified
 			##which should only be for species that use count for catch_weight (tuna species and others?)
 			self.db.Execute('''DROP TABLE IF EXISTS estimated_subcatch_CTN''')
@@ -757,68 +775,117 @@ class Dataset:
 						UPDATE estimated_subcatch SET changed='CTN', catch_weight=catch_weight/%(average)s WHERE species_code='%(species)s' AND event_key IN (SELECT event_key FROM estimated_subcatch_CTN_%(species)s_e);
 						
 					'''%locals())
-					
 			Check('estimated_subcatch','CTN','change')
 
 		if self.groom_landing:
-			Init('landing')
+			if 0:
+				Init('landing')
 
-			##DAM,DAF
-			##Sometimes there is no landing_datetime and hence no fishing_year in which case we can not scale these landings
-			##Drop these trips before doing scaling because otherwise the allocation will not be correct
-			Drop('landing','DAM', '''landing_datetime IS NULL''')
-			Drop('landing','DAF', '''landing_datetime>'%s' '''%lastValidDate)
+				##DAM,DAF
+				##Sometimes there is no landing_datetime and hence no fishing_year in which case we can not scale these landings
+				##Drop these trips before doing scaling because otherwise the allocation will not be correct
+				Drop('landing','DAM', '''landing_datetime IS NULL''')
+				Drop('landing','DAF', '''landing_datetime>'%s' '''%lastValidDate)
 
-			##DES (Starr D.1.1): Drop invalid destination codes 
-			Drop('landing','DES', '''destination_type NOT IN ('A','C','E','F','H','L','O','S','U','W')''')
-
-			##SCR (Starr D.1.4): "Find commonly entered invalid state codes and replace with correct state code"
-			Change('landing','SCR','state_code',"'GRE'",'''state_code IN ('EAT','DIS')''')
-			Change('landing','SCR','state_code',"'HDS'",'''state_code='HED' ''')
-			Change('landing','SCR','state_code',"'HGU'",'''state_code='TGU' ''')
-			Change('landing','SCR','state_code',"'GGU'",'''state_code IN ('GGO','GGT')''')
-
-			##STI: Remove invalid state_codes. This is a list of state_codes from 
-			##http://www.fish.govt.nz/en-nz/Research+Services/Research+Database+Documentation/fish_ce/Appendix+1.htm
-			##If not in this list then set to NULL
-			valid = ('GRE','GUT','HGU','DRE','FIL','SKF','USK','SUR','SUR','TSK','TRF','DSC','DVC','MEA','SCT','RLT','TEN','FIN',
-			'LIV','MKF','MGU','HGT','HGF','GGU','SHU','ROE','HDS','HET','FIT','SHF','MBS','MBH','MEB','FLP','BEA','LIB',
-			'CHK','LUG','SWB','WIN','OIL','TNB','GBP')
-			Change('landing','STI','state_code','NULL','''state_code NOT IN %s'''%repr(valid))
-
-			##DUP (Starr D.1.2): "Look for duplicate landings on multiple (CELR and CLR) forms. Keep only a single version if determined that the records are duplicated"
-			##If the following fields are duplicated across form types then drop all but the CEL record.  Do this after state_code, destination_type etc have been fixed up.
-			fields = ['vessel_key','landing_datetime','fishstock_code','state_code','destination_type','unit_type','unit_num','unit_weight','green_weight']
-			sql = '''UPDATE landing SET dropped='DUP' WHERE dropped IS NULL AND form_type!='CEL' '''
-			for field in fields: sql += ''' AND %s=?'''%field
-			fieldsComma = ','.join(fields)
-			for row in self.db.Rows('''SELECT %s FROM (
-					SELECT DISTINCT %s,form_type FROM landing WHERE dropped IS NULL
-				) GROUP BY %s HAVING count(*)>1;'''%(fieldsComma,fieldsComma,fieldsComma)): 
-				self.db.Execute(sql,row)
-			Check('landing','DUP','drop',field='',to='NULL',clause=''' 'Duplicated on CELR and CLR forms' ''')
+				##DES (Starr D.1.1): Drop invalid destination codes . The following is from the Warehou documentation v8.0:
+				'''
+				destination_type destination_type_desc destination_indicator
+				A Accidental loss N
+				B Stored as Bait N
+				C Disposed to crown L
+				D Discarded (NON-ITQ) N
+				E Eaten N
+				F Section 111 Recreational Catch N
+				H Loss from Holding Pot N
+				L Landed in NZ (to LFR) L
+				M QMS returned to sea (Part 6A) N
+				O Conveyed outside NZ O
+				P Holding receptacle in the water N
+				Q Holding receptacle on land N
+				R Retained on board N
+				S Seized by crown L
+				T Transfer to another vessel V
+				U Used for Bait N
+				W Sold at wharf O
+				X QMS returned to sea, except 6A N
+				'''
+				Drop('landing','DES', '''destination_type NOT IN ('A','B','C','D','E','F','H','L','M','O','P','Q','R','S','T','U','W','X')''')
 				
-			##COM (Starr D.1.3): "Find missing conversion factor fields and insert correct value for relevant state code and fishing year.
-			## Missing fields can be inferred from the median of the non-missing fields"
-			##For each state_code replace missing values with median
-			for row in self.db.Rows('''SELECT DISTINCT species_code,state_code FROM landing WHERE state_code IS NOT NULL AND conv_factor IS NOT NULL;'''):
-				species_code,state_code = row
-				median = self.db.Value('''SELECT median(conv_factor) FROM landing WHERE species_code=='%s' AND state_code='%s' AND conv_factor IS NOT NULL;'''%(species_code,state_code))
-				if median is not None: Change('landing','COM','conv_factor',median,'''conv_factor IS NULL AND species_code=='%s' AND state_code=='%s' '''%(species_code,state_code))
+				##DIL Drop incomplete landings
+				##Drop any trip with one of the 'held' codes because it will get double counted next time
+				self.db.Execute('''
+					UPDATE landing SET dropped=='DIL' WHERE trip IN (
+						SELECT DISTINCT trip FROM landing WHERE destination_type IN ("R","Q","T"))
+				''')
+				
+				##DTV Drop any trip from a vessel listed in tranship_vessel_key for the next 3 months
+				for row in self.db.Rows('''
+					SELECT landing_datetime, tranship_vessel_key,species_code,fishstock_code,green_weight 
+					FROM landing WHERE green_weight>0 AND landing_datetime IS NOT NULL AND tranship_vessel_key IS NOT NULL 
+					GROUP BY landing_datetime, tranship_vessel_key
+				'''):
+					landing_datetime, tranship_vessel_key,species_code,fishstock_code,green_weight  = row
+					self.db.Execute('''UPDATE landing SET dropped=='DTV %s' WHERE trip IN (
+						SELECT trip FROM trip_details 
+							WHERE vessel_key==? AND landing_datetime>? AND landing_datetime<date(?,'+3 months'))'''%species_code,(tranship_vessel_key,landing_datetime,landing_datetime))
+
+				##SCR (Starr D.1.4): "Find commonly entered invalid state codes and replace with correct state code"
+				Change('landing','SCR','state_code',"'GRE'",'''state_code IN ('EAT','DIS')''')
+				Change('landing','SCR','state_code',"'HDS'",'''state_code='HED' ''')
+				Change('landing','SCR','state_code',"'HGU'",'''state_code='TGU' ''')
+				Change('landing','SCR','state_code',"'GGU'",'''state_code IN ('GGO','GGT')''')
+
+				##STI: Remove invalid state_codes. This is a list of state_codes from 
+				##http://www.fish.govt.nz/en-nz/Research+Services/Research+Database+Documentation/fish_ce/Appendix+1.htm
+				##If not in this list then set to NULL
+				valid = ('GRE','GUT','HGU','DRE','FIL','SKF','USK','SUR','SUR','TSK','TRF','DSC','DVC','MEA','SCT','RLT','TEN','FIN',
+				'LIV','MKF','MGU','HGT','HGF','GGU','SHU','ROE','HDS','HET','FIT','SHF','MBS','MBH','MEB','FLP','BEA','LIB',
+				'CHK','LUG','SWB','WIN','OIL','TNB','GBP')
+				Change('landing','STI','state_code','NULL','''state_code NOT IN %s'''%repr(valid))
+
+				##DUP (Starr D.1.2): "Look for duplicate landings on multiple (CELR and CLR) forms. Keep only a single version if determined that the records are duplicated"
+				##If the following fields are duplicated across form types then drop all but the CEL record.  Do this after state_code, destination_type etc have been fixed up.
+				fields = ['vessel_key','landing_datetime','fishstock_code','state_code','destination_type','unit_type','unit_num','unit_weight','green_weight']
+				sql = '''UPDATE landing SET dropped='DUP' WHERE dropped IS NULL AND form_type!='CEL' '''
+				for field in fields: sql += ''' AND %s=?'''%field
+				fieldsComma = ','.join(fields)
+				for row in self.db.Rows('''SELECT %s FROM (
+						SELECT DISTINCT %s,form_type FROM landing WHERE dropped IS NULL
+					) GROUP BY %s HAVING count(*)>1;'''%(fieldsComma,fieldsComma,fieldsComma)): 
+					self.db.Execute(sql,row)
+				Check('landing','DUP','drop',field='',to='NULL',clause=''' 'Duplicated on CELR and CLR forms' ''')
 					
-			##COV (Starr D.1.5): See if more than one conv_factor for each state code for each species
-			self.db.Execute('''CREATE TABLE IF NOT EXISTS landing_COV(
-				species TEXT,
-				state_code TEXT,
-				conv_factor REAL,
-				records INTEGER
-			);''')
-			for species in [row[0] for row in self.db.Rows('''SELECT DISTINCT species_code FROM landing;''')]:
-				for row in self.db.Rows('''SELECT state_code,conv_factor,count(*) FROM landing WHERE state_code IN (
-					SELECT state_code FROM (
-						SELECT DISTINCT state_code,conv_factor FROM landing WHERE species_code=='%s' AND dropped IS NULL
-					) GROUP BY state_code HAVING count(*)>1
-				) GROUP BY state_code,conv_factor'''%species): self.db.Execute('''INSERT INTO landing_COV VALUES(?,?,?,?);''',(species,row[0],row[1],row[2]))
+				##COM (Starr D.1.3): "Find missing conversion factor fields and insert correct value for relevant state code and fishing year.
+				## Missing fields can be inferred from the median of the non-missing fields"
+				##For each state_code replace missing values with median
+				for row in self.db.Rows('''SELECT DISTINCT species_code,state_code FROM landing WHERE state_code IS NOT NULL AND conv_factor IS NOT NULL;'''):
+					species_code,state_code = row
+					median = self.db.Value('''SELECT median(conv_factor) FROM landing WHERE species_code=='%s' AND state_code='%s' AND conv_factor IS NOT NULL;'''%(species_code,state_code))
+					if median is not None: Change('landing','COM','conv_factor',median,'''conv_factor IS NULL AND species_code=='%s' AND state_code=='%s' '''%(species_code,state_code))
+						
+			##COV (Starr D.1.5): Tabulate the conversion factors used
+			self.db.Script('''
+				DROP TABLE IF EXISTS landing_COV;
+				CREATE TABLE landing_COV(
+					species TEXT,
+					state_code TEXT,
+					records INTEGER,
+					conv_factor REAL,
+					comments TEXT
+				);''')
+			for species_code,state_code,count in self.db.Rows('''SELECT species_code,state_code,count(*) FROM landing
+				WHERE species_code IS NOT NULL AND state_code  IS NOT NULL AND conv_factor IS NOT NULL
+				GROUP BY species_code,state_code HAVING count(*)>1;'''):
+				##Determine the most recent conv_factor used
+				values = self.db.Values('''SELECT conv_factor FROM landing WHERE species_code==? AND state_code==? AND conv_factor IS NOT NULL ORDER BY landing_datetime DESC LIMIT 10''',(species_code,state_code))
+				if min(values)==max(values): 
+					value = values[0]
+					comment = 'OK'
+					self.db.Execute('''UPDATE landing SET conv_factor=? WHERE species_code==? AND state_code==?;''',(value,species_code,state_code))
+				else:
+					value = None
+					comment = 'Conflict in recent conversion factors: %s-%s'%(min(values),max(values))
+				self.db.Execute('''INSERT INTO landing_COV VALUES(?,?,?,?,?)''',(species_code,state_code,count,value,comment))
 
 			##STD (Starr D.1.6): "Drop landings where state code==FIN|==FLP|==SHF|==ROE and there is more than one record for the trip/Fishstock combination."
 			for row in self.db.Rows('''SELECT landing.trip,landing.fishstock_code FROM landing INNER JOIN (
@@ -882,7 +949,9 @@ class Dataset:
 						minimum,average = self.groom_estimated_subcatch_catch[species]	
 						adjust = '*%s'%average
 					else: adjust = ''
-					sql = '''SELECT trip,sum(estimated_subcatch.catch_weight)%s FROM fishing_event,estimated_subcatch WHERE fishing_event.event_key=estimated_subcatch.event_key AND trip IS NOT NULL AND species_code='%s' GROUP BY trip;'''%(adjust,species)
+					sql = '''SELECT fishing_event.trip,sum(estimated_subcatch.catch_weight)%s 
+					FROM fishing_event,estimated_subcatch 
+					WHERE fishing_event.event_key=estimated_subcatch.event_key AND fishing_event.trip IS NOT NULL AND species_code='%s' GROUP BY fishing_event.trip;'''%(adjust,species)
 					for row in self.db.Rows(sql):
 						try: trip = trips[row[0]]
 						except KeyError: continue ##There may be no match because the trip did not land the species but did record it in effort. That does not matter here because were are concerned with landings
@@ -995,6 +1064,69 @@ class Dataset:
 				if target_species: self.db.Execute('''UPDATE fishing_event SET target_species=?,changed='TAR' WHERE target_species IS NULL AND trip=?''',[target_species,trip])
 			Drop('fishing_event','TAM','''trip IN (SELECT DISTINCT trip FROM fishing_event WHERE target_species IS NULL)''')
 			
+			##FSM (fishstock/stat match) checks
+			##Check that the recorded combinations of landing.fishstock_code and fishing_event.start_stats_area_code are valid:
+			##	- each fishstock_code has a corresponding start_stats_area_code
+			##	- each start_stats_area_code has a corresponding fishstock_code
+			## Create tables of fishstocks, ports and stats by trip 
+			self.db.Script('''
+			DROP TABLE IF EXISTS landing_FSM_fishstocks;
+			CREATE TABLE landing_FSM_fishstocks AS SELECT trip,fishstock_code,count(*),sum(green_weight) FROM landing GROUP BY trip,fishstock_code;
+			CREATE INDEX landing_FSM_fishstocks_trip ON landing_FSM_fishstocks(trip);
+			CREATE INDEX landing_FSM_fishstocks_fishstock ON landing_FSM_fishstocks(fishstock_code);
+			CREATE INDEX landing_FSM_fishstocks_trip_fishstock ON landing_FSM_fishstocks(trip,fishstock_code);
+
+			DROP TABLE IF EXISTS landing_FSM;
+			CREATE TABLE landing_FSM (
+				trip INTEGER,
+				fishstock_code TEXT,
+				start_stats_area_code TEXT
+			);
+
+			DROP TABLE IF EXISTS fishing_event_FSM_stats;
+			CREATE TABLE fishing_event_FSM_stats AS SELECT trip,start_stats_area_code,count(*),sum(effort_num),sum(fishing_duration) FROM fishing_event GROUP BY trip,start_stats_area_code;
+			CREATE INDEX fishing_event_FSM_stats_trip ON fishing_event_FSM_stats(trip);
+			CREATE INDEX fishing_event_FSM_stats_stat ON fishing_event_FSM_stats(start_stats_area_code);
+			CREATE INDEX fishing_event_FSM_stats_trip_stat ON fishing_event_FSM_stats(trip,start_stats_area_code);
+
+			DROP TABLE IF EXISTS fishing_event_FSM;
+			CREATE TABLE fishing_event_FSM (
+				trip INTEGER,
+				species TEXT,
+				start_stats_area_code TEXT,
+				fishstock_code TEXT
+			);
+			''')
+
+			##Check that all recorded fishstocks for a trip have a corresponding stat for that trip
+			##For each fishstock...
+			for species in self.species:
+				for fishstock in self.db.Values('''SELECT DISTINCT fishstock_code FROM landing WHERE species_code=?;''',[species]):
+					##For each trip recording that fishstock...
+					for trip in self.db.Values('''SELECT DISTINCT trip FROM landing WHERE fishstock_code==? AND trip IS NOT NULL;''',[fishstock]):
+						tag = False
+						if self.db.Value('''SELECT count(*) FROM fishing_event_FSM_stats WHERE trip==?''',[trip])>0:
+							count = self.db.Value('''SELECT count(*) FROM fishing_event_FSM_stats WHERE trip==%s AND start_stats_area_code IN (SELECT stat FROM qmastats WHERE qma=='%s');'''%(trip,fishstock))
+							if count==0: 
+								self.db.Execute('''INSERT INTO landing_FSM SELECT trip,'%s',start_stats_area_code FROM fishing_event_FSM_stats WHERE trip==%s;'''%(fishstock,trip))
+								tag = True
+						else: 
+							self.db.Execute('''INSERT INTO landing_FSM VALUES(%s,'%s',NULL);'''%(trip,fishstock))
+							tag = True
+						if tag: self.db.Execute('''UPDATE landing SET dropped='FSM' WHERE trip==?;''',(trip,))
+						
+			##Check that all recorded stats have corresponding fishstock in landing
+			##This needs to be done by species since (a) the stats-fishstock relationship varies by species (b) the need to restrict to target events because
+			##just because there was effort in in area does not mean that you catch the species
+			for species in self.species:
+				for stat in self.db.Values('''SELECT DISTINCT start_stats_area_code FROM fishing_event WHERE target_species=='%s';'''%species):
+					print species,stat
+					for trip in self.db.Values('''SELECT DISTINCT trip FROM fishing_event WHERE target_species=='%s' AND start_stats_area_code=='%s' AND trip IS NOT NULL;'''%(species,stat)):
+						if self.db.Value('''SELECT count(*) FROM landing_FSM_fishstocks WHERE trip==%s'''%trip)>0:
+							count = self.db.Value('''SELECT count(*) FROM landing_FSM_fishstocks WHERE trip==%s AND fishstock_code IN (SELECT qma FROM qmastats WHERE species=='%s' AND stat=='%s');'''%(trip,species,stat))
+							if count==0: self.db.Execute('''INSERT INTO fishing_event_FSM SELECT trip,'%s','%s',fishstock_code FROM landing_FSM_fishstocks WHERE trip==%s;'''%(species,stat,trip))
+						else: self.db.Execute('''INSERT INTO fishing_event_FSM VALUES(%s,'%s','%s',NULL);'''%(trip,species,stat))
+
 			##POS: Drop positions that are outside of the bounding box of the statistical areas
 			self.db.Execute('''DROP TABLE IF EXISTS stats_boxes;''')  
 			self.db.Execute('''CREATE TABLE stats_boxes(stat TEXT,latmin REAL,latmax REAL,lonmin REAL,lonmax REAL);''')  
@@ -1238,21 +1370,6 @@ class Dataset:
 			for field in ('est','equ','prop'):
 				self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN TOT_%s REAL;'''%field)  
 				self.db.Execute('''UPDATE fishing_event SET TOT_%s=%s;'''%(field,'+'.join([specie+'_'+field for specie in self.species])))
-					
-		##Calculate date and fishing_year (used for reporting on effect of grooming)
-		self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN date DATETIME;''')  
-		self.db.Execute('''UPDATE fishing_event SET date=strftime('%Y-%m-%d',start_datetime);''')
-		self.db.Execute('''CREATE INDEX IF NOT EXISTS fishing_event_date ON fishing_event(date);''')
-
-		self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN fishing_year INTEGER;''') 
-		self.db.Execute('''UPDATE fishing_event SET fishing_year=strftime('%Y',date);''')
-		self.db.Execute('''UPDATE fishing_event SET fishing_year=fishing_year+1 WHERE strftime('%m',date)>="10";''')
-		self.db.Execute('''CREATE INDEX IF NOT EXISTS fishing_event_fishing_year ON fishing_event(fishing_year);''')
-
-		self.db.Alter('''ALTER TABLE landing ADD COLUMN fishing_year INTEGER;''') 
-		self.db.Execute('''UPDATE landing SET fishing_year=strftime('%Y',landing_datetime);''')
-		self.db.Execute('''UPDATE landing SET fishing_year=fishing_year+1 WHERE strftime('%m',landing_datetime)>="10";''')
-		self.db.Execute('''CREATE INDEX IF NOT EXISTS landing_fishing_year ON landing(fishing_year);''')
 
 		##Add fishing_year to fishing_event, qmr and mhr table for summing
 		for table in ('qmr','mhr'):
@@ -1725,7 +1842,22 @@ class Dataset:
 					table += tr
 			div += table
 			return div
-
+			
+		def TabulateChecks(caption,header,rows,checks):
+			table = []
+			for code,desc in checks:
+				some = False
+				for row in rows:
+					bits = row[0].split()
+					if bits[0]==code:
+						if len(bits)>1: desc_all = desc + ' for '+'/'.join(bits[1:])
+						else: desc_all = desc
+						table.append([code,desc_all]+list(row[1:]))
+						some = True
+				if not some:
+					table.append([code,desc]+[None]*(len(header)-2))
+			return Tabulate(caption,header,table)
+					
 		class FigureIndexHolder:
 			FigureIndex = 0
 		def Figurate(filename,caption="No caption defined"):
@@ -1772,7 +1904,7 @@ class Dataset:
 			if transform!='': xlab = '%s (%s)'%(transform,xlab)
 			if ylab=='': ylab = 'Records'
 				
-			filename = Filename('%s %s %s hist.png'%(table,field,where))
+			filename = Filename('summarize/%s %s %s hist.png'%(table,field,where))
 			R.png(filename,600,400)
 			R.hist(values,breaks=30,main='',xlab=xlab,ylab=ylab,col='grey')
 			R.legend("topright",legend=['N=%i'%n,'P5=%.2f'%p5,'Med=%.2f'%median,'GM=%.2f'%geomean,'P95=%.2f'%p95],bty='n')
@@ -1789,7 +1921,7 @@ class Dataset:
 			if len(wheres)>0: sql += ''' AND ''' + ''' AND '''.join(wheres)
 			rows = self.db.Rows(sql)
 				
-			filename = Filename('%s %s %s %s %s scat.png'%(table,x,y,transform,where))
+			filename = Filename('summarize/%s %s %s %s %s scat.png'%(table,x,y,transform,where))
 			
 			if transform=='log10': func = math.log10
 			else: func = lambda x: x
@@ -1896,13 +2028,21 @@ class Dataset:
 		
 		##estimated_subcatch
 		report += H1('''3. Estimated catch table''')
+		
+		rows = self.db.Rows('''SELECT dropped,count(*),sum(catch_weight)/1000 FROM estimated_subcatch WHERE dropped IS NOT NULL GROUP by dropped 
+				UNION SELECT changed,count(*),sum(catch_weight)/1000 FROM estimated_subcatch WHERE changed IS NOT NULL GROUP BY changed;''')
+		checks = (
+			('CTN','Estimated catch entered as weight instead of numbers check'),
+		)
+		report += TabulateChecks("Summary of error checks on estimated_subcatch table. Checks are tabulated in the order that they are discussed in the following sections.",
+			('Code','Description','Records','Estimated catch (t)'),rows,checks)
 
 		num = self.db.Value('''SELECT count(species) FROM estimated_subcatch_CTN;''')
 		if num>0:
 			report += H2('''3.1 Estimated catch entered as weight instead of numbers check (CTN)''')
 			report += P('''For a few species, estimated catch should be recorded in numbers rather than weights.  This check is designed to find and change those records 
 			where the weight was recorded instead of numbers.  This is done by comparing the estimated catch with the landings for each trip for each species. If the ratio of landings to estimated catch
-			is less than a specified threshold then the estimated catch is assumed to have been mis-reported as a catch weight and is adjusted by diving by a specified average weight.''')
+			is less than a specified threshold then the estimated catch is assumed to have been mis-reported as a catch weight and is adjusted by dividing by a specified average weight.''')
 
 			for species in self.db.Values('''SELECT species FROM estimated_subcatch_CTN;'''):
 				report += H3(species)
@@ -1925,11 +2065,20 @@ class Dataset:
 				report += Figurate(src=filename) 
 				
 		##landing
-		##Create a list of error checks in the order in which they appear
+		report += H1('''4. Landings table''')
+		
+		report += P('''In the following summaries of errors in the landings table, the reported landing weight (in tonnes) is for ALL species combined (unless explicitly by species or fishstock)''')
+
+		rows = self.db.Rows('''
+			SELECT dropped,count(*),count(*)/(SELECT count(*) FROM landing),sum(green_weight)/1000,sum(green_weight)/(SELECT sum(green_weight) FROM landing) FROM landing WHERE dropped IS NOT NULL GROUP by dropped 
+			UNION 
+			SELECT changed,count(*),count(*)/(SELECT count(*) FROM landing),sum(green_weight)/1000,sum(green_weight)/(SELECT sum(green_weight) FROM landing) FROM landing WHERE changed IS NOT NULL GROUP BY changed;''')
 		checks = (
 			('DAM','Drop if landing date/time is missing'),
 			('DAF','Drop if landing date/time is in future'),
-			('DES','Drop if invalid or unused destination codes'),
+			('DES','Drop if invalid destination codes'),
+			('DIL','Drop any trip where the landings are incomplete'),
+			('DTV','Drop any trip from a vessel listed as a transhipment destimation for the next 3 months'),
 			('SCR','Change invalid state code'),
 			('STI','Change if still invalid state code'),
 			('FSM','Drop if no matching stat area on trip for a fishstock'),
@@ -1939,21 +2088,8 @@ class Dataset:
 			('STD','Drop records for parts of fish'),
 			('GRR','Drop records based on greenweight range check'),
 		)
-		
-		report += H1('''4. Landings table''')
-		report += P('''In the following summaries of errors in the landings table, the reported landing weight (in tonnes) is for ALL species combined (unless explicitly by species or fishstock)''')
-
-		rows = self.db.Rows('''SELECT dropped,count(*),sum(green_weight)/1000 FROM landing WHERE dropped IS NOT NULL GROUP by dropped 
-				UNION SELECT changed,count(*),sum(green_weight)/1000 FROM landing WHERE changed IS NOT NULL GROUP BY changed;''')
-		table = []
-		for code,desc in checks:
-			events,landings = None,None
-			for row in rows:
-				if row[0][:3]==code:
-					events,landings = row[1:3]
-					break
-			table.append((code,desc,events,landings))
-		report += Tabulate("Summary of error checks on landing table. Checks are tabulated in the order that they are discussed in the following sections.",('Code','Description','Landing events','Landings (t)'),table)
+		report += TabulateChecks("Summary of error checks on landing table. Checks are tabulated in the order that they are discussed in the following sections.",
+			('Code','Description','Landing events','Landing events (%)','Landings (t)','Landings (%)'),rows,checks)
 
 		report += H2('''4.1 Drop if landing date/time missing or in future (DAM & DAF)''')
 		report += P('''Records with either of these errors are dopped because this date is required for scaling catches.''')
@@ -1964,11 +2100,12 @@ class Dataset:
 		report += P('''Starr D.1.1 suggests dropping records with any destination_type that is not in the list 'A','C','E','F','H','L','O','S','U','W'.''')
 		report += Tabulate('''DES errors by destination_type''',('Code','Records','Landings (t)'),
 			self.db.Rows('''SELECT destination_type,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='DES' GROUP BY destination_type;'''))
-		codes = self.db.Values('''SELECT DISTINCT destination_type FROM landing  WHERE destination_type IS NOT NULL AND (dropped IS NULL OR dropped=='DES');''')
+			
+		codes = self.db.Values('''SELECT DISTINCT destination_type FROM landing  WHERE destination_type IS NOT NULL;''')
 		rows = []
 		for fy in fishing_years:
 			row = [fy]
-			for code in codes: row.append(self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE destination_type==? AND fishing_year==? AND (dropped IS NULL OR dropped=='DES');''',(str(code),fy)))
+			for code in codes: row.append(self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE destination_type==? AND fishing_year==?;''',(str(code),fy)))
 			rows.append(row)
 		report += Tabulate('''Landings (t) by <i>destination_type</i> and <i>fishing_year</i>. This includes records dropped by the "DES" check but not those 
 							dropped by other checks.''',['Fishing year']+codes,rows)
@@ -1997,11 +2134,11 @@ class Dataset:
 		report += P('''Apart from being inconsistent, these trips need to be dropped because landings can not be allocated properly''')
 		report += Tabulate('FSM errors by fishstock',('Fishstock','Records','Landings (t)'),
 			self.db.Rows('''SELECT fishstock_code,count(*),sum(green_weight)/1000 FROM landing WHERE dropped=='FSM' GROUP BY fishstock_code'''))
-		#report += Tabulate('For trips with FSM errors the stat area recorded by fishstock (limited to 100)',('Fishstock','Stat area','Trips'),
-		#	self.db.Rows('''SELECT fishstock_code,start_stats_area_code,count(*) FROM landing_FSM GROUP BY fishstock_code,start_stats_area_code ORDER BY count(*) DESC LIMIT 100;'''))
-		#report += Tabulate('For trips with FSM errors summary of the port of landing (limited to 250)',('Fishstock','Stat area','Port','Count'),
-		#	self.db.Rows('''SELECT lfsm.fishstock_code,start_stats_area_code,landing_name,count(*) FROM landing_FSM AS lfsm LEFT JOIN landing USING (trip) 
-		#		GROUP BY lfsm.fishstock_code,start_stats_area_code,landing_name ORDER BY count(*) DESC LIMIT 250;'''))
+		report += Tabulate('For trips with FSM errors the stat area recorded by fishstock (limited to 100)',('Fishstock','Stat area','Trips'),
+			self.db.Rows('''SELECT fishstock_code,start_stats_area_code,count(*) FROM landing_FSM GROUP BY fishstock_code,start_stats_area_code ORDER BY count(*) DESC LIMIT 100;'''))
+		report += Tabulate('For trips with FSM errors summary of the port of landing (limited to 250)',('Fishstock','Stat area','Port','Count'),
+			self.db.Rows('''SELECT lfsm.fishstock_code,start_stats_area_code,landing_name,count(*) FROM landing_FSM AS lfsm LEFT JOIN landing USING (trip) 
+				GROUP BY lfsm.fishstock_code,start_stats_area_code,landing_name ORDER BY count(*) DESC LIMIT 250;'''))
 		if 0:
 			for row in self.db.Rows('''SELECT species,start_stats_area_code,fishstock_code,count(*) FROM fishing_event_FSM GROUP BY species,start_stats_area_code,fishstock_code ORDER BY count(*) DESC;'''): print row
 				
@@ -2093,13 +2230,24 @@ class Dataset:
 
 		##fishing_event
 		report += H1('''5. Fishing event table''')
-
+		
 		##Need to decide on a species that is used as a basis for reporting estimated catches.  Use the first of difinition.species
 		species = self.species[0]
-
-		report += Tabulate('Summary of error checks on fishing_event table',('Error','Action','Records','Catch (t)'),
-			self.db.Rows('''SELECT dropped,'Dropped',count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE dropped IS NOT NULL GROUP by dropped 
-				UNION SELECT changed,'Changed',count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE changed IS NOT NULL GROUP BY changed;'''%locals()))
+		
+		rows = self.db.Rows('''SELECT dropped,count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE dropped IS NOT NULL GROUP by dropped 
+				UNION SELECT changed,count(*),sum(%(species)s_est)/1000 FROM fishing_event WHERE changed IS NOT NULL GROUP BY changed;'''%locals())
+		checks = (
+			('PMM','Drop trip if mixed method trip and primary_method missing for an event'),
+			('PMR','Replace primary_method if single method trip'),
+			('SAM','Drop trip if mixed area trip and start_stats_area_code missing for an event'),
+			('SAR','Replace start_stats_area_code if single area trip'),
+			('TAM','Drop trip if mixed target trip and target_species missing for an event'),
+			('TAR','Replace target_species if single target trip'),
+			('POS','Set latitiude or longitude to NULL if they are outside of the bounding box of the statistical area'),
+			('EFF','Change outlier effort values')
+		)
+		report += TabulateChecks('''Summary of error checks on fishing_event table. 
+			Checks are tabulated in the order that they are discussed in the following sections.''',('Code','Description','Fishing events','Estimated catch (t, %s)'%species),rows,checks)
 
 		report += H2('''5.1 Missing fishing method (PMR & PRM)''')
 		report += P('''Starr D.2.1 suggests "Look for missing method codes by trip. a) drop the entire trip if more than one method was used for the trip; b) if a single method trip, insert the method into the missing field."''')
