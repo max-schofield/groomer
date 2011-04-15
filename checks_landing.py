@@ -239,12 +239,26 @@ class LASCD(LA):
 	brief = 'State codes for body parts'
 	desc = '''"Drop landings where state code==FIN|==FLP|==SHF|==ROE and there is more than one record for the trip/Fishstock combination."(Starr D.1.6)'''
 	column = 'state_code'
+	
 	def do(self):
-		for row in self.db.Rows('''SELECT landing.trip,landing.fishstock_code FROM landing INNER JOIN (
+		self.flag(clause='''state_code IN ('FIN','FLP','SCF','ROE')''')
+	
+	def doNew(self):
+		for row in self.db.Rows('''
+			SELECT trip,fishstock_code 
+			FROM landing
+			WHERE trip IN ( SELECT DISTINCT trip FROM landing WHERE state_code IN ('FIN','FLP','SCF','ROE') AND trip IS NOT NULL )
+			GROUP BY trip, fishstock_code 
+			HAVING count(*)>1;
+		'''): self.flag(clause='''trip=%s AND fishstock_code='%s' AND state_code IN ('FIN','FLP','SCF','ROE')'''%row)
+			
+	def doOld(self):
+		##Found this to be old so try the alternative version above
+		for row in db.Rows('''SELECT landing.trip,landing.fishstock_code FROM landing INNER JOIN (
 				SELECT DISTINCT trip,fishstock_code FROM landing WHERE state_code IN ('FIN','FLP','SCF','ROE') AND trip IS NOT NULL
 			) hasCodes ON landing.trip=hasCodes.trip AND landing.fishstock_code=hasCodes.fishstock_code
-			GROUP BY landing.trip,landing.fishstock_code HAVING count(*)>1;'''
-		):self.flag(clause='''trip=%s AND fishstock_code='%s' AND state_code IN ('FIN','FLP','SCF','ROE')'''%row)
+			GROUP BY landing.trip,landing.fishstock_code HAVING count(*)>1;
+		'''): self.flag(clause='''trip=%s AND fishstock_code='%s' AND state_code IN ('FIN','FLP','SCF','ROE')'''%row)
 	
 class LADUP(LA):
 	drop = True
@@ -280,11 +294,18 @@ class LACFM(LA):
 		In this implementation we replace missing values with the median over all fishing_years for that state_code.
 	'''
 	column = 'conv_factor'
+	
 	def do(self):
-		for species_code,state_code,fishing_year in self.db.Rows('''SELECT DISTINCT species_code,state_code,fishing_year FROM landing WHERE state_code IS NOT NULL AND conv_factor IS NOT NULL;'''):
+		for species_code,state_code,fishing_year in self.db.Rows('''
+			SELECT species_code,state_code,fishing_year 
+			FROM landing 
+			WHERE state_code IS NOT NULL AND conv_factor IS NOT NULL
+			GROUP BY species_code,state_code,fishing_year 
+			HAVING count(*)>10000;'''):
 			median = self.db.Value('''SELECT median(conv_factor) FROM landing WHERE species_code==? AND state_code=? AND fishing_year==? AND conv_factor IS NOT NULL;''',(species_code,state_code,fishing_year))
 			if median is not None: 
 				self.change(clause='''conv_factor IS NULL AND species_code=='%s' AND state_code=='%s' AND fishing_year==%s'''%(species_code,state_code,fishing_year),value=median)
+	
 	def summarise(self):
 		div = Check.summarise(self)
 		div += FARTable(
@@ -307,7 +328,8 @@ class LACFC(LA):
 				species_code,
 				state_code,
 				fishing_year,
-				median(conv_factor) AS conv_factor
+				median(conv_factor) AS conv_factor,
+				sum(green_weight) AS green_weight
 			FROM landing 
 			WHERE species_code IS NOT NULL AND state_code IS NOT NULL  AND conv_factor IS NOT NULL
 			GROUP BY species_code,state_code,fishing_year;
@@ -340,10 +362,10 @@ class LACFC(LA):
 				GROUP BY species_code,state_code,orig,new
 			''')
 		)
-		##Table of median conversion factor by fishing_year and state_code
 		fishing_years = range(1990,2011)
 		for species in self.dataset.species:
 			states = self.db.Values('''SELECT DISTINCT state_code FROM check_LACFC WHERE species_code=='%s';'''%species)
+			##Table of median conversion factor by fishing_year and state_code
 			medians = self.db.Rows('''SELECT fishing_year,state_code,conv_factor FROM check_LACFC WHERE species_code=='%s';'''%species)
 			medians = dict(zip(['%s-%s'%(y,s) for y,s,m in medians],[m for y,s,m in medians]))
 			rows = []
@@ -354,7 +376,20 @@ class LACFC(LA):
 					except: median = ''
 					row.append(median)
 				rows.append(row)
-			div += FARTable('Median conversion factors for %s in each fishing year by processed state (for states having at least 100 records)'%species,['Fishing year']+states,rows)
+			div += FARTable('Median conversion factors for %s in each fishing year by processed state'%species,['Fishing year']+states,rows)
+			##Table of sum(green_weight) by fishing_year and state_code
+			values = self.db.Rows('''SELECT fishing_year,state_code,round(green_weight/1000,1) FROM check_LACFC WHERE species_code=='%s';'''%species)
+			values = dict(zip(['%s-%s'%(y,s) for y,s,v in values],[v for y,s,v in values]))
+			rows = []
+			for fy in fishing_years:
+				row = [fy]
+				for state in states:
+					try: value = values['%s-%s'%(fy,state)]
+					except: value = ''
+					row.append(value)
+				rows.append(row)
+			div += FARTable('Landings (t) of %s in each fishing year by processed state'%species,['Fishing year']+states,rows)
+		
 		return div
 		
 class LAGWI(LA):
@@ -385,7 +420,7 @@ class LAGWR(LA):
 	column = 'green_weight'
 	
 	##The minimum number of landing events
-	landingsMin = 100
+	landingsMin = 1000
 	
 	class Trip:
 		'Class for recording details about a trip'

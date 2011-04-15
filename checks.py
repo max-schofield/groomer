@@ -19,13 +19,14 @@ Check.List = [
 	TDDAB,
 	
 	ESSTA,
-	ESCWN,
+	#ESCWN, ##Not fully operational at this stage
 	
 	FESTA,
 	FESDM,
 	FESDF,
 	FEPMI,
 	FEPMM,
+	FETSW,
 	FETSI,
 	FETSM,
 	FESAI,
@@ -33,6 +34,7 @@ Check.List = [
 	FELLI,
 	FELLS,
 	FEFMA,
+	FEETN,
 	FEEFO,
 	
 	LASTA,

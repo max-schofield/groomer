@@ -1,5 +1,9 @@
 import sys,os,sqlite3,string,datetime,random,copy
-from ordereddict import OrderedDict
+
+try:
+	from ordereddict import OrderedDict
+except ImportError, e:
+	print 'Warning ',e, 'Using usual dict'
 
 from database import Database
 from checks import *
@@ -590,12 +594,15 @@ class Dataset:
 				if catch_weight is None: catch_weight = 0
 				self.db.Execute('''UPDATE fishing_event SET %s_est=%s WHERE event_key=%s;'''%(species,catch_weight,event_key))
 			
+			##Use the defined fishstocks for allocations, or if not defined all fishstocks reported
+			fishstocks = self.fishstocks.get(species,None)
+			if fishstocks is None: fishstocks = self.db.Values('''SELECT DISTINCT fishstock_code FROM landing WHERE species_code='%s' '''%species)
 			##Starr E.1.5 & E.1.6 & F Allocate landings to effort_collapsed strata
 			##Allocate each trip/fishstock stratum in landings_collapsed to matching trip/stat/method/target stratums in effort collapsed
 			##Allocation is done on two bases (a) equally divided (b) relative to estimated catch (or on the basis of effort_num if there was no estimated catch,
 			## or equally if a mixed method trip or no effort_num
 			##Allocate landings for each fishstock...
-			for fishstock in self.db.Values('''SELECT DISTINCT fishstock_code FROM landing WHERE species_code=='%s';'''%species):
+			for fishstock in fishstocks:
 				stats = ','.join([repr(str(value)) for value in self.db.Values('''SELECT stat FROM qmastats WHERE qma='%s' '''%fishstock)])
 				print fishstock,stats
 				trips_tried,trips_failed = 0,0
@@ -795,6 +802,8 @@ class Dataset:
 			for species in species_list:
 				##Don't want to do it for the 'TOT' species
 				if species=='TOT': continue
+				##Can't do it for species where there are no fishstocks defined and so to traget to scale up to
+				if not self.fishstocks.has_key(species): continue
 				
 				##A list of fishstocks to scale up to for this species is taken from self.
 				fishstocks = ','.join([repr(fishstock) for fishstock in self.fishstocks[species]])
@@ -858,12 +867,46 @@ class Dataset:
 			prop = count/float(overall)
 			if prop>=0.05: variables.append(variable)
 				
+		##Create a vessels table
+		self.db.Execute('''DROP TABLE IF EXISTS vessels;''')
+		self.db.Execute('''CREATE TABLE vessels AS 
+			SELECT vessel_key,%s ,%s
+			FROM vessel_history
+			GROUP BY vessel_key;'''%(
+				','.join(['median(CAST(%s AS REAL)) AS %s'%(name,name) for name in (
+						'overall_length_metres',
+						'registered_length_metres',
+						'draught_metres',
+						'beam_metres',
+						'gross_tonnes',
+						'max_speed_knots',
+						'service_speed_knots',
+						'engine_kilowatts',
+						'max_duration_days'
+					)]),
+				','.join(['mode(%s) AS %s'%(name,name) for name in (
+						'flag_nationality_code',
+						'built_year',
+						'tenders_number',
+						'total_crew_number',
+						'base_region_code',
+						'base_port_code'
+					)])
+		))
+		self.db.Execute('''CREATE INDEX vessels_vessel_key ON vessels(vessel_key);''')
+		##Dump to text file
+		out = file('vessels.txt','w')
+		self.db.Execute('''SELECT * FROM vessels LIMIT 1;''')
+		print>>out, '\t'.join(self.db.Fields())
+		for row in self.db.Rows('''SELECT * FROM vessels;'''): print>>out, '\t'.join((str(item) if item is not None else 'NA') for item in row)
+				
 		##Save to a smaller database
 		simple_path = 'simple.db3'
 		if os.path.exists(simple_path): os.remove(simple_path)
 		simple = Database(simple_path)
 		simple.Execute('''ATTACH DATABASE "%s" AS original;'''%('database.db3'))
 		simple.Execute('''CREATE TABLE events AS SELECT * FROM original.events;''')
+		simple.Execute('''CREATE TABLE vessels AS SELECT * FROM original.vessels;''')
 				
 		##Save to a schema file
 		schema = file('schema.py','w')
@@ -1037,7 +1080,7 @@ class Dataset:
 		if len(criteria)>0: p += ''', or had fishing events that:<ul>%s</ul>\n''' %('<b>and</b>'.join(criteria))
 		report += p
 		
-		p = P('''For those trips we would obtained all effort data as well as landings and estimated catch data for the species %s.  
+		p = P('''For those trips we obtained all effort data as well as landings and estimated catch data for the species %s.  
 			In addition, monthly harvest return (MHR) data for all available months for the above fishstocks was obtained by month, client and Fishstock.'''%species)
 		if self.request_extra_notes: p += '''We also requested that:"'''+self.request_extra_notes+'"'
 		report += p
@@ -1081,6 +1124,7 @@ class Dataset:
 		
 		fishing_years = range(1990,2011)
 		for species in self.species:
+			if not self.fishstocks.has_key(species): continue
 			for fishstock in self.fishstocks[species]:
 				values = {}
 				checks = ['DAM','DES','DUP','STD', 'GRR','FSM','STR']
@@ -1108,10 +1152,10 @@ class Dataset:
 					])
 					rows.append(row)
 			
-			##Output to file
-			#out = file('summary.%s.txt'%fishstock,'w')
-			#print>>out, '\n'.join(['\t'.join(str(item) for item in row) for row in rows])
-			report += FARTable('Landings (t) dropped by check for %s'%fishstock,['Fishing year','Published','QMR','MHR','Original(all data)']+checks+['Remaining(dropped==NULL)','Fishing events (est)', 'Fishing events (alloc)','Fishing events (alloc,separ)'],rows)
-		
+				##Output to file
+				#out = file('summary.%s.txt'%fishstock,'w')
+				#print>>out, '\n'.join(['\t'.join(str(item) for item in row) for row in rows])
+				report += FARTable('Landings (t) dropped by check for %s'%fishstock,['Fishing year','Published','QMR','MHR','Original(all data)']+checks+['Remaining(dropped==NULL)','Fishing events (est)', 'Fishing events (alloc)','Fishing events (alloc,separ)'],rows)
+			
 		self.db.Execute('''INSERT INTO status(task,done) VALUES('summarise',datetime('now'));''')
 		self.db.Commit()

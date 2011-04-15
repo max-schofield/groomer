@@ -22,43 +22,78 @@ class FE(Check):
 		
 class FESDM(FE):
 	brief = 'Start date/time is missing'
+	desc = '''
+		The starting date/time for a fishing event can be missing. This check flags those records but no attempt is made to impute the datetime/time.
+	'''
 	column = 'start_datetime'
 	clause = '''start_datetime IS NULL'''
 	
 class FESDF(FE):
 	brief = 'End date/time is in the future'
+	desc = '''
+		The starting date/time for a fishing event can be in the future. This check flags those records but no attempt is made to cSt datetime/time.
+	'''
 	column = 'start_datetime'
 	clause = '''start_datetime>datetime('now')'''
 	
 class FEPMI(FE):
 	brief = 'Method imputation'
 	desc = '''		
-		PMR/M (Starr D.2.1) "Look for missing method codes by trip. a) drop the entire trip if more than one method was used for the trip; b) if a single 
-		method trip, insert the method into the missing field."
+		This check follows the suggestion of Starr (2009) to replace missing values for the column <i>primary_method</i> with the value recorded for other fishing events in the trip providing those other values are all the same.
 	'''
 	column = 'primary_method'
 	
 	def do(self):
-		##Find all records with missing primary_method. For each trip in this set count number of primary_method used. If only one, then replace
-		##otherwise drop the trip
+		##Find all records with missing primary_method. For each trip in this set count number of primary_method used. If only one, then replace otherwise drop the trip
 		for row in self.db.Rows('''SELECT trip,primary_method FROM (
 			SELECT DISTINCT trip,primary_method FROM fishing_event WHERE trip IN (SELECT DISTINCT trip FROM fishing_event WHERE primary_method IS NULL AND trip IS NOT NULL) AND primary_method IS NOT NULL
 		) GROUP BY trip HAVING count(*)==1'''): 
 			self.change(clause='''primary_method IS NULL AND trip=%s'''%row[0],value=row[1])
 			
+	def summarise(self):
+		div = Div()
+		div += FARTable(
+			'''Number of fishing events by imputed value for <i>primary_method</i>.''',
+			('Method','Fishing events'),
+			self.db.Rows('''
+				SELECT primary_method, count(*) 
+				FROM fishing_event
+				WHERE flags LIKE '%%%s%%'
+				GROUP BY primary_method
+			'''%self.code())
+		)
+		return div
+			
 class FEPMM(FE):
 	brief = 'Method missing'
 	desc = '''		
-		Flag entire trips which have an event with a missing method
+		This check follows the suggestion of Starr (2009) to flag entire trips which have an event with a missing method.
 	'''
 	column = 'primary_method'
 	clause = ''' trip IN (SELECT DISTINCT trip FROM fishing_event WHERE primary_method IS NULL AND trip IS NOT NULL)'''
 	
+class FETSW(FE):
+	brief = 'Target species invalid'
+	desc = '''		
+		Where the target species code is not amongst the list of valid species codes it is flagged and set to NULL so that it may be subsequently corrected during imputation.
+	'''
+	column = 'target_species'
+	clause = '''target_species NOT IN (
+		'AGR','ALB','ANC','ANG','ATO','BAR','BBE','BCA','BCD','BCO','BCR','BEA','BEE','BEL','BEM','BFL','BGZ','BIG','BKM','BMA','BNS','BOA','BOE','BOX','BPF','BRA','BRC','BRI','BRZ','BSH','BSK','BSP','BSQ','BTU','BUT',
+		'BWH','BWS','BYA','BYX','CAC','CAN','CAR','CDL','CHC','CHI','CMO','COC','COE','COL','CON','CRA','CRB','CSQ','CTU','CYO','CYP','DAN','DEA','DIS','DOF','DSK','DSS','DSU','DWD','DWE','ECO','EEL','EGR','ELE',
+		'EMA','EMP','EPD','EPL','EPR','ERA','ESO','ETB','ETL','FHD','FLA','FLY','FRO','GAR','GFL','GLM','GMU','GRA','GSC','GSE','GSH','GSP','GSQ','GTR','GUR','HAG','HAK','HEP','HHS','HJO','HOK','HOR','HPB','ICX',
+		'JAV','JDO','JGU','JMA','KAH','KBB','KBL','KEL','KIC','KIN','KOH','KTA','KWH','LAN','LCH','LDO','LEA','LEG','LEP','LES','LFB','LFE','LIM','LIN','LSO','MAK','MCA','MDI','MDO','MMI','MOK','MOO','MOR','MRL','MSG','MSP','MUN','MUS',
+		'NOT','NSD','NTU','OAR','OCT','OEO','OFH','ONG','OPE','ORH','OSD','OYS','OYU','PAD','PAR','PAU','PDG','PDO','PGR','PHC','PIG','PIL','PIP','PMA','POP','POR','POS','POY','PPI','PRA','PRK','PTE','PTO','PZL','QSC',
+		'RAG','RAT','RBM','RBT','RBY','RCO','RDO','RHY','RIB','RMO','ROC','RPE','RRC','RSK','RSN','RUD','SAE','SAI','SAL','SAM','SAU','SBK','SBO','SBW','SCA','SCC','SCG','SCH','SCI','SCM','SCO','SDO','SEM','SEV','SFE',
+		'SFI','SFL','SFN','SKA','SKI','SKJ','SLG','SLK','SLO','SMC','SNA','SND','SOR','SPD','SPE','SPF','SPI','SPO','SPP','SPR','SPZ','SQU','SQX','SRR','SSF','SSH','SSI','SSK','SSO','STA','STM','STN','STR','STU','SUN','SUR',
+		'SWA','SWO','TAR','THR','TOA','TOR','TRE','TRS','TRU','TUA','TUR','VCO','WAH','WAR','WGR','WHE','WHR','WHX','WIT','WOE','WRA','WSE','WSQ','WWA','YBF','YEM','YFN'
+	)'''
+	value = None
+	
 class FETSI(FE):
 	brief = 'Target species imputation'
 	desc = '''		
-		(Starr D.2.3). "Search for missing target species fields. a) drop the entire trip if all target species are missing in the trip; 
-		## b) substitute the 'predominant' (most frequent) target species for the trip for trips which report the target species in other records"
+		This check follows the suggestion of Starr (2009) to replace missing values for the column <i>target_species</i> with the most frequently recorded value for other fishing events in the trip.
 	'''
 	column = 'target_species'
 	
@@ -66,9 +101,26 @@ class FETSI(FE):
 		for trip in self.db.Values('''SELECT DISTINCT trip FROM fishing_event WHERE target_species IS NULL AND trip IS NOT NULL'''):
 			value = self.db.Value('''SELECT target_species FROM fishing_event WHERE target_species IS NOT NULL AND trip=? GROUP BY target_species ORDER BY count(*) DESC LIMIT 1''',[trip])
 			if value: self.change(clause='''target_species IS NULL AND trip=%s'''%trip,value=value)
+			
+	def summarise(self):
+		div = Div()
+		div += FARTable(
+			'''Number of fishing events by imputed value for <i>target_species</i>.''',
+			('Target species','Fishing events'),
+			self.db.Rows('''
+				SELECT target_species, count(*) 
+				FROM fishing_event
+				WHERE flags LIKE '%%%s%%'
+				GROUP BY target_species
+			'''%self.code())
+		)
+		return div
 		
 class FETSM(FE):
 	brief = 'Target species missing'
+	desc = '''		
+		This check flags trips where target species is missing.
+	'''
 	column = 'target_species'
 	clause = '''trip IN (SELECT DISTINCT trip FROM fishing_event WHERE target_species IS NULL AND trip IS NOT NULL)'''
 	
@@ -128,9 +180,8 @@ class FEFMA(FE):
 	desc = '''Starr E.1.4 Mark trips which landed to more than one **other** (not in fishstocks) fishstock for straddling statistical areas.Since this relies on fishing event.start_stats_area_code do this after grooming on that'''
 	
 	def do(self):
-		##For each species...
-		for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
-			fishstocks_interest = self.dataset.fishstocks[species]
+		##For each species determine those events which may be outside the area of interest...
+		for species,fishstocks_interest in self.dataset.fishstocks.items(): 
 			##..for each stat that belongs to 2 or more FMAs for this species...
 			for stat in self.db.Values('''
 				SELECT DISTINCT start_stats_area_code 
@@ -140,9 +191,11 @@ class FEFMA(FE):
 				fishstocks_stat = tuple(self.db.Values('''SELECT qma FROM qmastats WHERE species='%s' AND stat='%s';'''%(species,stat)))
 				##...for each trip that fished in this stat...
 				for trip in self.db.Values('''SELECT DISTINCT trip FROM fishing_event WHERE start_stats_area_code='%s' AND (lat IS NULL OR lon IS NULL) AND trip IS NOT NULL'''%stat):
-					##...see if there were landings to more than one of these fishstocks or if non of the fishstocks of interest in fishstocks_landed
 					fishstocks_landed = self.db.Values('''SELECT DISTINCT fishstock_code FROM landing WHERE trip=%s AND fishstock_code IN %s;'''%(trip,repr(fishstocks_stat)))
-					if len(fishstocks_landed)>1: self.flag(clause='''trip=%s AND start_stats_area_code='%s' AND (lat IS NULL OR lon IS NULL)'''%(trip,stat),details=','.join(fishstocks_landed))
+					##...see if there were landings to more than one of these fishstocks
+					if len(fishstocks_landed)>1: 
+						self.flag(clause='''trip=%s AND start_stats_area_code='%s' AND (lat IS NULL OR lon IS NULL)'''%(trip,stat),details=','.join(fishstocks_landed))
+						
 	
 	def summarise(self):
 		div = Div()
@@ -167,6 +220,47 @@ class FEFMA(FE):
 			WHERE code=='%s' AND start_stats_area_code IN (%s)
 			GROUP BY start_stats_area_code,details'''%(self.code(),','.join([repr(stat) for stat in self.dataset.statareas])))
 		)
+		return div
+		
+class FEETN(FE):
+	brief = 'Consistency between effort number fields'
+	desc = '''
+		For the methods RLP, CP, EP, FP and FN, the field <i>effort_total_num</i> is used for the "Number of pot/trap lifts in the day" and <i>effort_num</i> is used for
+		the "Number of pots/traps in the water at midgnight". For the CP method, these fields are checked for consistency. Records are flagged where the number of pots lifted was more than 9 times the 
+		number left overnight and the number of pots lifted was more than 100. Where <i>effort_total_num</i> is missing and  <i>effort_num</i> is greater than zero <i>effort_total_num</i> is replaced with <i>effort_num</i>.
+	'''
+	column = 'effort_total_num'
+	
+	def do(self):
+		self.flag(clause = '''primary_method=='CP' AND effort_total_num>effort_num*9 AND effort_total_num>100 AND effort_num>10''')
+		self.change(clause = '''primary_method=='CP' AND effort_total_num IS NULL AND effort_num>0''',expr='''effort_num''')
+
+	def summarise(self):
+		div = Div()
+		div += P('''The following figures provide summaries of the relationship between the total potlifts and the number of pots in the water at midnight for 
+			cod potting (CP).''')
+		div += FARTable(
+			'''The number of fishing events flagged according by effort_total_num (using bins of width 10)''',
+			('effort_total_num','Fishing events flagged'),
+			self.db.Rows('''SELECT CAST(effort_total_num/10 AS INTEGER)*10 AS effort_total_num, count(*) AS flagged FROM fishing_event WHERE flags LIKE '%%%s%%' GROUP BY CAST(effort_total_num/10 AS INTEGER)*10; '''%self.code())
+		)
+		for method in ('CP',):
+			div += self.histogram(
+				'fishing_event','effort_total_num/effort_num',
+				xlab='effort_total_num/effort_num',
+				ylab='Events',
+				where="primary_method=='%s'"%method,
+				caption = '''Histogram of the ratio of total potlifts (effort_total_num ) over pots in the water at midnight (effort_num) for method %s.'''%method
+			)
+			div += self.scatterplot(
+				'fishing_event','effort_num','effort_total_num',
+				transform='log10',
+				xlab='effort_num',
+				ylab='effort_total_num',
+				where="primary_method=='%s'"%method,
+				lines=[(0,1),(0,9)],
+				caption = '''Relationship between total potlifts (effort_total_num) and pots in the water at midnight (effort_num) for method %s.'''%method
+			)
 		return div
 		
 class FEEFO(FE):
@@ -204,6 +298,7 @@ class FEEFO(FE):
 		print
 		for field in [
 			'effort_num',
+			'effort_total_num',
 			'fishing_duration',
 			'total_hook_num',
 			'total_net_length',

@@ -17,13 +17,34 @@ class databaseMedian:
 	def finalize(self):
 		try:
 			theValues = sorted(self.values)
-			if len(theValues) % 2 == 1: return theValues[(len(theValues)+1)/2-1]
+			if len(theValues)==0: return None
+			elif len(theValues) % 2 == 1: return theValues[(len(theValues)+1)/2-1]
 			else:
 				lower = theValues[len(theValues)/2-1]
 				upper = theValues[len(theValues)/2]
 				return (lower + upper) * 0.5
 		except Exception, e: 
 			print e
+			raise e
+			
+class databaseMode:
+	def __init__(self):
+		self.values = []
+
+	def step(self, value):
+		if value is not None: self.values.append(value)
+
+	def finalize(self):
+		try:
+			counts = {}
+			for value in self.values:
+				try: counts[value] += 1
+				except KeyError: counts[value] = 0
+			values = sorted(counts,key=counts.__getitem__)
+			if len(values)==0: return None
+			else: return values[-1]
+		except Exception, e: 
+			print e,counts
 			raise e
 
 class Database(object):
@@ -36,6 +57,7 @@ class Database(object):
 		
 		self.Connection.create_function('mangle',2,databaseMangle)
 		self.Connection.create_aggregate('median',1,databaseMedian)
+		self.Connection.create_aggregate('mode',1,databaseMode)
 		
 		self.Trace = None
 		

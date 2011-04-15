@@ -37,7 +37,7 @@ class FLSAU(Check):
 	def do(self):
 		##For each species...
 		print
-		for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
+		for species in self.db.Values('''SELECT species_code FROM landing GROUP BY species_code HAVING count(*)>=1000;'''):
 			print species
 			##Check that all recorded stats have corresponding fishstock in landing
 			##This needs to be done by species since (a) the stats-fishstock relationship varies by species (b) the need to restrict to target events because
@@ -80,13 +80,20 @@ class FLFSU(Check):
 	table = 'landing'
 	column = 'fishstock_code'
 	
+	species = None
+	fishstocks = None
+	
 	def do(self):
 		##For each species...
 		print
-		for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
+		if self.species is None: species_list = self.db.Values('''SELECT species_code FROM landing GROUP BY species_code HAVING count(*)>=1000;''')
+		else: species_list = self.species
+		for species in species_list:
 			print species
 			##..for each fishstock...
-			for fishstock in self.db.Values('''SELECT DISTINCT fishstock_code FROM landing WHERE species_code=? AND fishstock_code IS NOT NULL;''',[species]):
+			if self.fishstocks is None: fishstocks = self.db.Values('''SELECT DISTINCT fishstock_code FROM landing WHERE species_code=? AND fishstock_code IS NOT NULL;''',[species])
+			else: fishstocks = self.fishstocks
+			for fishstock in fishstocks:
 				print '  ',fishstock
 				##..for each trip recording that fishstock...
 				for trip in self.db.Values('''SELECT DISTINCT trip FROM landing WHERE fishstock_code==? AND trip IS NOT NULL;''',[fishstock]):
