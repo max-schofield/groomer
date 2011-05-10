@@ -1124,13 +1124,14 @@ class Dataset:
 		report += H1('''Summaries''')
 		
 		fishing_years = range(1990,2011)
+		checks = ['LADTH','LADTT','LASCD','LADUP','LAGWR']
 		for species in self.species:
 			if not self.fishstocks.has_key(species): continue
 			for fishstock in self.fishstocks[species]:
 				values = {}
-				checks = ['DAM','DES','DUP','STD', 'GRR','FSM','STR']
-				values_check = self.db.Rows('''SELECT fishing_year,substr(dropped,1,3),sum(green_weight)/1000 FROM landing WHERE fishstock_code=='%s' GROUP BY fishing_year,substr(dropped,1,3);'''%fishstock)
-				values.update(dict(zip(['%s-%s'%(y,s) for y,s,m in values_check],[m for y,s,m in values_check])))
+				for check in checks:
+					values_check = self.db.Rows('''SELECT fishing_year,sum(green_weight)/1000 FROM landing WHERE fishstock_code=='%s' AND flags LIKE '%%%s%%' GROUP BY fishing_year;'''%(fishstock,check))
+					values.update(dict(zip(['%s-%s'%(y,check) for y,m in values_check],[m for y,m in values_check])))
 				rows = []
 				for fy in fishing_years:
 					row = [
