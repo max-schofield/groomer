@@ -528,7 +528,7 @@ class LAGWR(LA):
 				
 				effort_units = {
 					'BLL':'total_hook_num',
-					'SN':'effort_length'
+					'SN':'total_net_length'
 				}.get(method,'effort_num')
 				
 				##Calculate CPUE distribution for this method for each trip
