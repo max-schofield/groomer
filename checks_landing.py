@@ -95,7 +95,8 @@ class LADTH(LA):
 	brief = 'Landings held'
 	desc = '''Some destination codes relate to catches that are retained by the vessel, either on board or in holding receptacles.
 	These "non-terminal" landings may be double counted if they are retained. This check therefore flags all landing records where the 
-	destination_type is either 'P','Q', or 'R'. These catches should be landed on a subsequent trip and whilst that will inflate the cath-per-unit-effort of the subsequent
+	destination_type is either 'P' (Holding receptacle in the water), 'Q' (Holding receptacle on land), or 'R' (Retained on board). 
+	These catches should be landed on a subsequent trip and whilst that will inflate the cath-per-unit-effort of the subsequent
 	trip the overall inpact should be close to neutral. The only other alternative is to ignore all data for the vessel which would result in the loss of a large
 	amount of data.'''
 	column = 'destination_type'

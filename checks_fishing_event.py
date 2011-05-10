@@ -342,6 +342,7 @@ class FEEFO(FE):
 							floor = round(10/60.0,3) ## 10 minutes
 						elif primary_method=='SN':
 							floor = 2.0 ## 2 hours
+							ceil = 24.0 * 5 ## 5 days
 					print p10,fleet_median,p90,floor,ceil,; sys.stdout.flush()
 					
 					multiplier = 2.0
@@ -364,7 +365,7 @@ class FEEFO(FE):
 						##number of records."
 						if substitutions<=substitution_thresh: break
 						else:
-							if (lower==floor and upper==ceil) or multiplier>=100: break
+							if (lower==floor and upper==ceil) or multiplier>=99.99: break
 							else: multiplier += 0.1
 					print multiplier,'%s%%'%round(substitutions,3),; sys.stdout.flush()
 					
@@ -409,9 +410,55 @@ class FEEFO(FE):
 				print 
 				sys.stdout.flush()
 				
-	def summarise________(self):
+	def summarise(self):
 		div = Div()
-		div += FAR('''EFF changes by effor field, form_type and primary_method''',('Effort field','Form type','Method','Records not null','Records not null (%)','Min','10th percentile','Median','90th percentile','Max','Floor','Multiplier','Lower','Upper','Substitutions (%)'),
-			self.db.Rows('''SELECT * FROM fishing_event_EFF;'''))
+		div += P('''
+			For each form type, checks were done on the most important effort fields. Checks were only done on a form type/field combination is there were at least %s records 
+			and that the number of NULL values for that field for that form type were less than %s%% of all records. These criteria avoid running checks on data that form a small part of the dataset
+			or which are recorded on an optional basis. The following table lists the form type/effort field combinations for which this check was done.
+		'''%(self.events,100-self.notnulls))
+		
+		div += FARTable(
+			'''Results from the the FEEFO check on effort fields. The minimum, 10th percentile, median, 90th percentile and maximum are calculated prior to anges changes to data applied by this check. The
+			Floor and cieling are the minimum and maximum values that are applied to each effort field. The multiplier is the final multiplier used to convert the 10th and 90th percentiles into the lower and upper values
+			used to define if a substitution is done.''',
+			('Effort field','Form type','Method','Records not null','Records not null (%)','Minimum','10th percentile','Median','90th percentile','Maximum','Floor','Ceiling','Multiplier','Lower','Upper','Substitutions (%)'),
+			self.db.Rows('''SELECT * FROM check_FEEFO WHERE substitutions IS NOT NULL;'''))
+			
+		rows = self.db.Rows('''
+			SELECT primary_method,form_type,column,fishing_year,count(*) AS count
+			FROM checks LEFT JOIN fishing_event USING (id)
+			WHERE code=='FEEFO' AND primary_method IS NOT NULL AND form_type IS NOT NULL AND column IS NOT NULL AND fishing_year IS NOT NULL
+			GROUP BY primary_method,form_type,column,fishing_year
+		''')
+		rows = robjects.DataFrame({
+			'group': robjects.FactorVector(['%s-%s-%s'%(row[0],row[1],row[2]) for row in rows]),
+			'fishing_year': robjects.IntVector([row[3] for row in rows]),
+			'count': robjects.IntVector([row[4] for row in rows])
+		})
+		plot = ggplot2.ggplot(rows) + ggplot2.aes_string(x='fishing_year',y='count',colour='group') + ggplot2.geom_point() 
+		plot.plot()
+			
+		for method,column,form in self.db.Rows('''SELECT primary_method,field,form_type FROM check_FEEFO WHERE substitutions IS NOT NULL;'''):
+			rows = self.db.Rows('''
+				SELECT orig,new,count(*) AS count
+				FROM checks LEFT JOIN fishing_event USING (id)
+				WHERE code=='FEEFO' AND primary_method=='%s' AND column=='%s' AND form_type=='%s' 
+				GROUP BY orig,new
+			'''%(method,column,form))
+			
+			if len(rows)>0:
+				filename = 'FEEFO Orig New %s%s%s.png'%(method,column,form)
+				R.png(filename,600,400)
+				R.plot([x for x,y,c in rows],[y for x,y,c in rows],cex=[math.sqrt(c) for x,y,c in rows],xlab='Original value',ylab='Substituted value',pch=1)
+				R.dev_off()
+				div += FARFigure(filename,'%s %s %s'%(method,column,form))
+				
+				filename = 'FEEFO Hist Old %s%s%s.png'%(method,column,form)
+				R.png(filename,600,400)
+				R.hist([float(x) for x,y,c in rows if x is not None],xlab='Original value',main='',breaks=30)
+				R.dev_off()
+				div += FARFigure(filename,'%s %s %s'%(method,column,form))
+			
 		return div
 

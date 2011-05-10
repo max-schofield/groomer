@@ -2,6 +2,9 @@ import rpy2.rpy_classic as rpy
 rpy.set_default_mode(rpy.NO_CONVERSION)
 from rpy2.rpy_classic import r as R
 
+import rpy2.robjects.lib.ggplot2 as ggplot2
+import rpy2.robjects as robjects
+
 import math,time
 
 from database import *

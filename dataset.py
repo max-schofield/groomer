@@ -37,6 +37,7 @@ class Dataset:
 			'allocate_fishstocks':None,
 			
 			'extract_char_catches':'prop',
+			'extract_cpue_species':None,
 			'extract_cpue_catches':['est','prop'], ##More than one field can be extracted to cpue.txt file
 			
 			'zones':None,
@@ -929,7 +930,7 @@ class Dataset:
 		for flag in ('FEEFO',): self.db.Execute('''UPDATE fishing_event SET cpue_no=1 WHERE flags LIKE '%%%s%%';'''%flag)
 
 		species_fields = ''
-		for species in species_list:
+		for species in (self.extract_cpue_species if self.extract_cpue_species is not None else species_list):
 			for field in self.extract_cpue_catches:	
 				species_fields += ',%s_%s'%(species,field)
 			
