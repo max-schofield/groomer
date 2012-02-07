@@ -448,13 +448,13 @@ class FEEFO(FE):
 			'''%(method,column,form))
 			
 			if len(rows)>0:
-				filename = 'FEEFO Orig New %s%s%s.png'%(method,column,form)
+				filename = 'summary/FEEFO Orig New %s%s%s.png'%(method,column,form)
 				R.png(filename,600,400)
 				R.plot([x for x,y,c in rows],[y for x,y,c in rows],cex=[math.sqrt(c) for x,y,c in rows],xlab='Original value',ylab='Substituted value',pch=1)
 				R.dev_off()
 				div += FARFigure(filename,'%s %s %s'%(method,column,form))
 				
-				filename = 'FEEFO Hist Old %s%s%s.png'%(method,column,form)
+				filename = 'summary/FEEFO Hist Old %s%s%s.png'%(method,column,form)
 				R.png(filename,600,400)
 				R.hist([float(x) for x,y,c in rows if x is not None],xlab='Original value',main='',breaks=30)
 				R.dev_off()

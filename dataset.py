@@ -49,6 +49,17 @@ class Dataset:
 			
 		}.items(): setattr(self,kw,arg)
 
+                ##Set defaults for specified extract filenames
+                self.extract_filenames = {
+                    'trip_details':None,
+                    'fishing_event':None,
+                    'estimated_subcatch':None,
+                    'processed_catch':None,
+                    'landing':None,
+                    'vessel_history':None,
+                    'mhr':None,
+                }
+
 		##Apply overrides specified in arguments
 		for kw,arg in kwargs.items(): setattr(self,kw,arg)
 			
@@ -134,11 +145,11 @@ class Dataset:
 	def request(self):
 		'''Automatically create a data request email based'''
 		
-		species = ','.join(self.species)
+		species = ', '.join(self.species)
 		species_quoted = ','.join([repr(item) for item in self.species])
 		fishstocks_list = []
 		for fishstocks in self.fishstocks.values(): fishstocks_list.extend(fishstocks)
-		fishstocks  = ','.join(fishstocks_list)
+		fishstocks  = ', '.join(fishstocks_list)
 		fishstocks_quoted = ','.join([repr(item) for item in fishstocks_list])
 
 		##Email text
@@ -151,10 +162,10 @@ class Dataset:
 		if len(fishstocks_list)>0:  email += '''\n  * landed to %s\n'''%(fishstocks)
 
 		criteria = []
-		if len(self.statareas): criteria.append('''- were in statistical area(s) %s,'''%(','.join(self.statareas)))
-		if len(self.methods): criteria.append('''- used method(s) %s,'''%(','.join(self.methods)))
-		if len(self.targets): criteria.append('''- targeted species %s'''%(','.join(self.targets)))
-		if hasattr(self,'targets_not') and len(self.targets_not): criteria.append('''- did not target species %s'''%(','.join(self.targets_not)))
+		if len(self.statareas): criteria.append('''- were in statistical area(s) %s,'''%(', '.join(self.statareas)))
+		if len(self.methods): criteria.append('''- used method(s) %s,'''%(', '.join(self.methods)))
+		if len(self.targets): criteria.append('''- targeted species %s'''%(', '.join(self.targets)))
+		if hasattr(self,'targets_not') and len(self.targets_not): criteria.append('''- did not target species %s'''%(', '.join(self.targets_not)))
 		if len(criteria)>0:
 			email += '''    OR\n    * had fishing events that:\n\t\t'''
 			email += '\n    AND\n    '.join(criteria)
@@ -521,6 +532,9 @@ class Dataset:
 				elif 'datetime' in names[index]: 
 					if self.extract_datetime_format==1:
 						value = datetime.datetime.strptime(value,'%b %d %Y %I:%M%p')
+                                        elif type(self.extract_datetime_format) is str:
+                                                #Deal with dates of format"Feb  9 1993  6:10:00:000AM"
+                                                value = datetime.datetime.strptime(value,self.extract_datetime_format)
 					else:
 						##Deal with datetime format = 20/02/1991 12:00:00.000 AM
 						bits = value.split()
@@ -543,13 +557,13 @@ class Dataset:
 		
 		self.db.Script(file('/Trophia/Tanga/Groomer/tangagroomer/dataset.sql').read())
 			
-		self.loadFile('trip_details')
-		self.loadFile('fishing_event',['effort','fish_events'])
-		self.loadFile('estimated_subcatch',['estimated_catch','est_catch','estcatch'])
-		self.loadFile('processed_catch',['processed catch','proc_catch','procatch'])
-		self.loadFile('landing',['landed_catch'])
-		self.loadFile('vessel_history',['vessel_specs','vessel_spx','vessel_spexs','vessel_specx'])
-		self.loadFile('mhr')
+		self.loadFile('trip_details',filename=self.extract_filenames['trip_details'])
+		self.loadFile('fishing_event',filename=self.extract_filenames['fishing_event'],filetags=['effort','fish_events'])
+		self.loadFile('estimated_subcatch',filename=self.extract_filenames['estimated_subcatch'],filetags=['estimated_catch','est_catch','estcatch'])
+		self.loadFile('processed_catch',filename=self.extract_filenames['processed_catch'],filetags=['processed catch','proc_catch','procatch'])
+		self.loadFile('landing',filename=self.extract_filenames['landing'],filetags=['landed_catch'])
+		self.loadFile('vessel_history',filename=self.extract_filenames['vessel_history'],filetags=['vessel_specs','vessel_spx','vessel_spexs','vessel_specx'])
+		self.loadFile('mhr',filename=self.extract_filenames['mhr'])
 
 		self.loadFile('qmr',filename='/Trophia/Tanga/Data/shared/QMR.txt')
 		self.loadFile('dqss',filename='/Trophia/Tanga/Data/shared/DQSS_range_checks.txt',format='\t')
@@ -560,8 +574,8 @@ class Dataset:
 
 		for species in self.species:
 			if self.db.Value('''SELECT count(*) FROM qmastats WHERE species=='%s';'''%species)==0:
-				print 'No stats in qmastats for species %s. Using stats for "%s".'%(species,definition.load_qmastats)
-				self.db.Execute('''INSERT INTO qmastats(species,qma,stat) SELECT '%s','%s'||(CASE length(qma)>4 WHEN 1 THEN substr(qma,4,2) ELSE substr(qma,4,1) END),stat FROM qmastats WHERE species=='%s';'''%(species,species,definition.load_qmastats))
+				print 'No stats in qmastats for species %s. Using stats for "%s".'%(species,self.load_qmastats)
+				self.db.Execute('''INSERT INTO qmastats(species,qma,stat) SELECT '%s','%s'||(CASE length(qma)>4 WHEN 1 THEN substr(qma,4,2) ELSE substr(qma,4,1) END),stat FROM qmastats WHERE species=='%s';'''%(species,species,self.load_qmastats))
 
 		self.db.Execute('''INSERT INTO status(task,done) VALUES('load',datetime('now'));''')
 		self.db.Commit()

@@ -35,11 +35,19 @@ class ALLOC(Check):
 					) ;'''%(species,species,species,species,species,species,species)
 				)
 			la,est,all,tot,p1,p2,p3 = vals
+                        la = 0 if la is None else la
+                        est = 0 if est is None else est
+                        all = 0 if all is None else all
+                        tot = 0 if tot is None else tot
+                        def p(a,b):
+                            if a is None: return 0
+                            if b is None or b==0: return 'NA'
+                            return round(a/b*100,2)
 			div += P('''
 				For the entire dataset, since 1989/90, there was a total of %it of estimated catches and %it of landings (excluding those data dropped by error checks) for %s. 
 				A total of %it (%s%%) of these landings were able to be allocated to fishing events. 
 				Overall %s%% of allocations were made on the basis of estimated catches, %s%% on the basis of effort and %s%% were made equally to all fishing event on the trip.
-			'''%(round(est),round(la),species,round(all),round(all/la*100,2), round(p1/tot*100,1),round(p2/tot*100,1),round(p3/tot*100,1)))
+			'''%(round(est),round(la),species,round(all),p(all,la), p(p1,tot),p(p2,tot),p(p3,tot)))
 				
 			div += FARTable(
 				'''Comparison of landings, estimated catches and allocated landings and summary of allocated method for %s. 
