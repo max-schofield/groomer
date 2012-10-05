@@ -67,7 +67,9 @@ class LADTI(LA):
 	clause =  '''destination_type NOT IN %s'''%repr(list)
 	def summarise(self):
 		div = Div()
-		div += P('The following table summarises records in the <i>landing</i> table by <i>destination_type</i>.')
+		div += P('The following tables summarise records in the <i>landing</i> table by <i>destination_type</i>.')
+                
+                #By code across years
 		rows = []
 		for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
 			rows += self.db.Rows('''SELECT 
@@ -88,6 +90,23 @@ class LADTI(LA):
 			('Species','Destination','Valid','Records','Landings (t)','Landings (%)'),
 			rows
 		)
+                
+                # By code and year for each species
+		div += FARTable(
+			'''Records in the <i>landing</i> table by species_code, destination_type and fishing_year''',
+			('Species','Destination','Fishing year','Records','Landings (t)'),
+			self.db.Rows('''
+                            SELECT 
+                                species_code,
+                                destination_type,
+                                fishing_year,
+                                count(*),
+                                sum(green_weight)/1000
+                            FROM landing 
+                            GROUP BY species_code,destination_type,fishing_year;''')
+		)
+                
+                
 		return div
 	
 class LADTH(LA):
@@ -363,14 +382,13 @@ class LACFC(LA):
 				GROUP BY species_code,state_code,orig,new
 			''')
 		)
-		fishing_years = range(1990,2011)
 		for species in self.dataset.species:
 			states = self.db.Values('''SELECT DISTINCT state_code FROM check_LACFC WHERE species_code=='%s';'''%species)
 			##Table of median conversion factor by fishing_year and state_code
 			medians = self.db.Rows('''SELECT fishing_year,state_code,conv_factor FROM check_LACFC WHERE species_code=='%s';'''%species)
 			medians = dict(zip(['%s-%s'%(y,s) for y,s,m in medians],[m for y,s,m in medians]))
 			rows = []
-			for fy in fishing_years:
+			for fy in Check.fishing_years:
 				row = [fy]
 				for state in states:
 					try: median = medians['%s-%s'%(fy,state)]
@@ -382,7 +400,7 @@ class LACFC(LA):
 			values = self.db.Rows('''SELECT fishing_year,state_code,round(green_weight/1000,1) FROM check_LACFC WHERE species_code=='%s';'''%species)
 			values = dict(zip(['%s-%s'%(y,s) for y,s,v in values],[v for y,s,v in values]))
 			rows = []
-			for fy in fishing_years:
+			for fy in Check.fishing_years:
 				row = [fy]
 				for state in states:
 					try: value = values['%s-%s'%(fy,state)]

@@ -151,11 +151,11 @@ class FELLI(FE):
 		self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN lon REAL;''')  
 		
 		##Set lat and lon to NULL where 999.9
-		for field in ('trunc_start_lat','trunc_start_long','trunc_end_lat','trunc_end_long'): self.db.Execute('''UPDATE fishing_event SET %s==NULL WHERE %s=999.9'''%(field,field))
+		for field in ('start_latitude','start_longitude','end_latitude','end_longitude'): self.db.Execute('''UPDATE fishing_event SET %s==NULL WHERE %s=999.9'''%(field,field))
 			
-		self.db.Alter('''UPDATE fishing_event SET lat=trunc_start_lat, lon=trunc_start_long;''')  
-		self.db.Alter('''UPDATE fishing_event SET lat=trunc_end_lat WHERE lat IS NULL;''') 
-		self.db.Alter('''UPDATE fishing_event SET lon=trunc_end_long WHERE lon IS NULL;''') 
+		self.db.Alter('''UPDATE fishing_event SET lat=start_latitude, lon=start_longitude;''')  
+		self.db.Alter('''UPDATE fishing_event SET lat=end_latitude WHERE lat IS NULL;''') 
+		self.db.Alter('''UPDATE fishing_event SET lon=end_longitude WHERE lon IS NULL;''') 
 		
 class FELLS(FE):
 	brief = 'Position (lat/lon) outside of statistical area'
@@ -450,13 +450,15 @@ class FEEFO(FE):
 			if len(rows)>0:
 				filename = 'summary/FEEFO Orig New %s%s%s.png'%(method,column,form)
 				R.png(filename,600,400)
-				R.plot([x for x,y,c in rows],[y for x,y,c in rows],cex=[math.sqrt(c) for x,y,c in rows],xlab='Original value',ylab='Substituted value',pch=1)
+				#R.plot([x for x,y,c in rows],[y for x,y,c in rows],cex=[math.sqrt(c) for x,y,c in rows],xlab='Original value',ylab='Substituted value',pch=1)
+                                #plot = ggplot2.ggplot(rows) + ggplot2.aes_string(x='fishing_year',y='count',colour='group') + ggplot2.geom_point() 
+                                #plot.plot()
 				R.dev_off()
 				div += FARFigure(filename,'%s %s %s'%(method,column,form))
 				
 				filename = 'summary/FEEFO Hist Old %s%s%s.png'%(method,column,form)
 				R.png(filename,600,400)
-				R.hist([float(x) for x,y,c in rows if x is not None],xlab='Original value',main='',breaks=30)
+				#R.hist([float(x) for x,y,c in rows if x is not None],xlab='Original value',main='',breaks=30)
 				R.dev_off()
 				div += FARFigure(filename,'%s %s %s'%(method,column,form))
 			

@@ -14,6 +14,8 @@ class NotDefined: pass
 NotDefined = NotDefined()
 
 class Check:
+    
+        fishing_years = range(1990,2012)
 	
 	#The database connection
 	db = None

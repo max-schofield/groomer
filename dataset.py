@@ -1,9 +1,6 @@
 import sys,os,sqlite3,string,datetime,random,copy
 
-try:
-	from ordereddict import OrderedDict
-except ImportError, e:
-	print 'Warning ',e, 'Using usual dict'
+from collections import OrderedDict
 
 from database import Database
 from checks import *
@@ -291,10 +288,10 @@ class Dataset:
 		  fi.double_reel_num,
 		  fi.pair_trawl_yn,
 		  fi.bottom_depth,
-		  fi.trunc_start_lat,
-		  fi.trunc_start_long,
-		  fi.trunc_end_lat,
-		  fi.trunc_end_long,
+		  fi.start_latitude,
+		  fi.start_longitude,
+		  fi.end_latitude,
+		  fi.end_longitude,
 		  fi.start_stats_area_code,
 		  fi.vessel_key,
 		  fi.client_key,
@@ -747,12 +744,12 @@ class Dataset:
 			effort_speed AS speed,
 			surface_temp AS temp,
 			bottom_depth AS bottom,
-			trunc_start_lat AS lat,
-			trunc_start_long AS lon,
-			CAST (trunc_start_lat AS INTEGER) AS latd,
-			CAST (trunc_start_long AS INTEGER) AS lond,
-			CAST (trunc_start_lat/0.2 AS INTEGER) * 0.2 AS latd2,
-			CAST (trunc_start_long/0.2 AS INTEGER) * 0.2 AS lond2,
+			start_latitude AS lat,
+			start_longitude AS lon,
+			CAST (start_latitude AS INTEGER) AS latd,
+			CAST (start_longitude AS INTEGER) AS lond,
+			CAST (start_latitude/0.2 AS INTEGER) * 0.2 AS latd2,
+			CAST (start_longitude/0.2 AS INTEGER) * 0.2 AS lond2,
 			zone,
 			
 			fishing_duration AS duration,
@@ -768,7 +765,7 @@ class Dataset:
 			
 		FROM fishing_event
 		WHERE
-			year IS NOT NULL AND year>=1990 AND year<=2010 AND
+			year IS NOT NULL AND year>=1990 AND year<=2011 AND
 			month IS NOT NULL AND
 			method IS NOT NULL AND
 			target IS NOT NULL AND
@@ -986,8 +983,8 @@ class Dataset:
 			effort_speed AS speed,
 			surface_temp AS temp,
 			bottom_depth AS bottom,
-			trunc_start_lat AS lat,
-			trunc_start_long AS lon,
+			start_latitude AS lat,
+			start_longitude AS lon,
 			
 			/*
 			* Derived fields added in "augmenting.py"
@@ -1137,7 +1134,6 @@ class Dataset:
 		## Summaries by fishstock and fishing year for main report.
 		report += H1('''Summaries''')
 		
-		fishing_years = range(1990,2011)
 		checks = ['LADTH','LADTT','LASCD','LADUP','LAGWR']
 		for species in self.species:
 			if not self.fishstocks.has_key(species): continue
@@ -1147,7 +1143,7 @@ class Dataset:
 					values_check = self.db.Rows('''SELECT fishing_year,sum(green_weight)/1000 FROM landing WHERE fishstock_code=='%s' AND flags LIKE '%%%s%%' GROUP BY fishing_year;'''%(fishstock,check))
 					values.update(dict(zip(['%s-%s'%(y,check) for y,m in values_check],[m for y,m in values_check])))
 				rows = []
-				for fy in fishing_years:
+				for fy in Check.fishing_years:
 					row = [
 						fy,
 						self.db.Value('''SELECT landings FROM history WHERE fishstock=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
@@ -1162,16 +1158,21 @@ class Dataset:
 						row.append(value)
 					row.extend([
 						self.db.Value('''SELECT sum(green_weight)/1000 FROM landing WHERE dropped IS NULL AND fishstock_code=='%s' AND fishing_year==%s;'''%(fishstock,fy)),
+						self.db.Value('''SELECT sum(%s_est)/1000 FROM fishing_event WHERE start_stats_area_code IN (SELECT stat FROM qmastats WHERE qma=="%s") AND fishing_year==%s;'''%(species,fishstock,fy)),
+						self.db.Value('''SELECT sum(%s_prop)/1000 FROM fishing_event WHERE start_stats_area_code IN (SELECT stat FROM qmastats WHERE qma=="%s") AND fishing_year==%s;'''%(species,fishstock,fy)),
 						self.db.Value('''SELECT sum(%s_est)/1000 FROM fishing_event WHERE trip IN (SELECT trip FROM landing WHERE fishstock_code=='%s' AND fishing_year==%s);'''%(species,fishstock,fy)),
 						self.db.Value('''SELECT sum(%s_prop)/1000 FROM fishing_event WHERE trip IN (SELECT trip FROM landing WHERE fishstock_code=='%s' AND fishing_year==%s);'''%(species,fishstock,fy)),
-						self.db.Value('''SELECT sum(%s_prop)/1000 FROM fishing_event WHERE start_stats_area_code IN (SELECT stat FROM qmastats WHERE qma=="%s") AND fishing_year==%s;'''%(species,fishstock,fy))
 					])
 					rows.append(row)
 			
 				##Output to file
 				#out = file('summary.%s.txt'%fishstock,'w')
 				#print>>out, '\n'.join(['\t'.join(str(item) for item in row) for row in rows])
-				report += FARTable('Landings (t) dropped by check for %s'%fishstock,['Fishing year','Published','QMR','MHR','Original(all data)']+checks+['Remaining(dropped==NULL)','Fishing events (est)', 'Fishing events (alloc)','Fishing events (alloc,separ)'],rows)
+				report += FARTable(
+                                    'Summary of landings for %s'%fishstock,
+                                    ['Fishing year','Published','QMR','MHR','Landings (ungroomed)']+checks+['Landings (groomed)','Estimated (statistical areas)','Allocated (statistical areas)','Estimated (trips)', 'Allocated (trips)'],
+                                    rows
+                                )
 			
 		self.db.Execute('''INSERT INTO status(task,done) VALUES('summarise',datetime('now'));''')
 		self.db.Commit()
