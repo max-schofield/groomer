@@ -5,7 +5,7 @@ from collections import OrderedDict
 from database import Database
 from checks import *
 
-version = 1.0
+version = 1.1
 
 class Dataset:
 
@@ -257,7 +257,7 @@ class Dataset:
 		  fi.end_datetime,
 		  fi.primary_method,
 		  fi.target_species,
-		  fi.  fishing_duration,
+		  fi.fishing_duration,
 		  fi.catch_weight,
 		  fi.catch_weight_other,
 		  fi.non_  fish_yn,
@@ -312,7 +312,7 @@ class Dataset:
 		  ca.version_seqno,
 		  ca.group_key,
 		  ca.species_code,
-		  ca.  catch_weight,
+		  ca.catch_weight,
 		  ca.trip
 		from warehou..ce_estimated_subcatch ca,tempdb..trophia_%s tt
 		where ca.interp_yn = 'Y'
@@ -329,17 +329,17 @@ class Dataset:
 		  pr.event_key,
 		  pr.version_seqno,
 		  pr.group_key,
-		  pr.spec  prod_seqno,
-		  pr.spec  prod_action_type
-		  pr.  processed_datetime,
+		  pr.specprod_seqno,
+		  pr.specprod_action_type
+		  pr.processed_datetime,
 		  pr.species_code,
 		  pr.state_code,
 		  pr.unit_type,
 		  pr.unit_num,
 		  pr.unit_weight,
 		  pr.conv_factor,
-		  pr.  processed_weight,
-		  pr.  processed_weight_type,
+		  pr.processed_weight,
+		  pr.processed_weight_type,
 		  pr.green_weight,
 		  pr.green_weight_type,
 		  pr.dcf_key,
@@ -361,8 +361,8 @@ class Dataset:
 		  la.version_seqno,
 		  la.group_key,
 		  la.specprod_seqno,
-		  la.  landing_datetime,
-		  la.  landing_name,
+		  la.landing_datetime,
+		  la.landing_name,
 		  la.species_code,
 		  la.fishstock_code,
 		  la.state_code,
@@ -413,7 +413,7 @@ class Dataset:
 		  vs.total_crew_number,
 		  vs.base_region_code,
 		  vs.base_port_code
-		from corporat..vs_vessel_history vs, tempdb..trophia_%s tt
+		from corporat..vs_vessel_history vs
 		where vs.history_end_datetime >= '%s'
 		  and vs.history_start_datetime < '%s'
 		  and vs.vessel_key in (select distinct vessel_key
