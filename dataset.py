@@ -420,7 +420,7 @@ class Dataset:
 		  from warehou..ce_trip_details td,tempdb..trophia_%s tt
 		  where tt.trip = td.trip)
 		go
-		'''%(self.name,self.begin,self.end,self.name)
+		'''%(self.begin,self.end,self.name)
 
 		mq = '''
 		/* *********************************************/
