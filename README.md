@@ -82,7 +82,11 @@ The `email.txt` file contains draft text for an email to send to RDM. It describ
 ```
 Dear RDM,
 
-We have been contracted by New Zealand Ministry of Primary Industries under project "BFF2015-01 : Characterization of big bluefish in BBF 9" to analyse catch and effort data for BFF9. We would like to obtain catch and effort data for fishing trips that occurred between 01 Oct 1989 and 01 Oct 2014, and which landed to BFF9 , or which had fishing events that:
+We have been contracted by New Zealand Ministry of Primary Industries under project
+"BFF2015-01 : Characterization of big bluefish in BBF 9" to analyse catch and effort
+data for BFF9. We would like to obtain catch and effort data for fishing trips that
+occurred between 01 Oct 1989 and 01 Oct 2014, and which landed to BFF9 , or which 
+had fishing events that:
 
   - were in statistical area(s) 091, 092, 099, and,
   - used method(s) BT, BLL, and,
@@ -134,7 +138,7 @@ go
 
 ### Load method
 
-When you get the extract back from MPI you extract it into a subdirectory called `extract` and run the `load()` method. This creates a SQLite database, imaginatively called `database.db3`, in the project directory. The schema for this database is in [dataset.sql](dataset.sql) which mirror the tables in MPI's `warehou` database and add some additional tables used in error checking. The key tables that the extract files are loaded into are `trip_details`, `fishing_event`, `estimated_subcatch`, `processed_catch`, `landing`, `vessel_history`, `mhr` and `qmr`.
+When you get the extract back from MPI you put it into a subdirectory called `extract` and run the `load()` method. This creates a SQLite database, imaginatively called `database.db3`, in the project directory. The schema for this database is in [dataset.sql](dataset.sql) which mirror the tables in MPI's `warehou` database and add some additional tables used in error checking. The key tables that the extract files are loaded into are `trip_details`, `fishing_event`, `estimated_subcatch`, `processed_catch`, `landing`, `vessel_history`, `mhr` and `qmr`.
 
 ### Groom method
 
@@ -146,7 +150,7 @@ TD            | `trip_details`                   | [trip_details.py](trip_detail
 FE            | `fishing_event`                  | [checks_fishing_event.py](checks_fishing_event.py)
 ES            | `estimated_subcatch`             | [checks_estimated_subcatch.py](checks_estimated_subcatch.py)
 LA            | `landing`                        | [checks_landing.py](checks_landing.py)
-ES            | `fishing_event` & `landing`      | [checks_fishing_event_landing.py](checks_fishing_event_landing.py)
+FL            | `fishing_event` & `landing`      | [checks_fishing_event_landing.py](checks_fishing_event_landing.py)
 
 The `Check` base class defines some useful methods that allow checks to be defined and documented succinctly. For example, the `FESDM` which check for missing start date/time in the `fishing_event` table is defined and documented as:
 
