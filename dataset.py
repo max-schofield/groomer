@@ -7,6 +7,9 @@ from checks import *
 
 version = 1.2
 
+# Home directory of groomer used below to read files
+home = os.path.dirname(os.path.realpath(__file__))
+
 class Dataset:
 
     def __init__(self,**kwargs):
@@ -551,14 +554,16 @@ go
         self.db.Commit()
 
     def load(self):
-        ##Delete the existing database
+        # Delete the existing database
         if os.path.exists('database.db3'): os.remove('database.db3')
             
-        ##Create a new db connection and initialise it
+        # Create a new db connection and initialise it
         self.db = Database('database.db3')
         
-        self.db.Script(file('/home/nbentley/Trophia/Code/tangagroomer/dataset.sql').read())
+        # Create the database schema
+        self.db.Script(file(os.path.join(home,'dataset.sql')).read())
             
+        # Load in extract files
         self.loadFile('trip_details',filename=self.extract_filenames['trip_details'])
         self.loadFile('fishing_event',filename=self.extract_filenames['fishing_event'],filetags=['effort','fish_events'])
         self.loadFile('estimated_subcatch',filename=self.extract_filenames['estimated_subcatch'],filetags=['estimated_catch','est_catch','estcatch'])
@@ -567,17 +572,25 @@ go
         self.loadFile('vessel_history',filename=self.extract_filenames['vessel_history'],filetags=['vessel_specs','vessel_spx','vessel_spexs','vessel_specx'])
         self.loadFile('mhr',filename=self.extract_filenames['mhr'])
 
-        self.loadFile('qmr',filename='/home/nbentley/Trophia/Tanga/Data/shared/QMR.txt')
-        self.loadFile('dqss',filename='/home/nbentley/Trophia/Tanga/Data/shared/DQSS_range_checks.txt',format='\t')
-        self.loadFile('qmastats',filename='/home/nbentley/Trophia/Tanga/Data/shared/qmastats.txt',format=",")
+        # Load in files used for checks
+        self.loadFile('dqss',filename=os.path.join(home,'dqss_range_checks.tsv'))
+        self.loadFile('qmastats',filename=os.path.join(home,'qma_stats.tsv'))
+        self.loadFile('stats_boxes',filename=os.path.join(home,'stats_boxes.tsv'))
 
-        try: self.loadFile('history',filename='history.csv')
-        except Exception, e: print e,'Ignoring'
-
+        # Use default stats for QMA if needed
         for species in self.species:
             if self.db.Value('''SELECT count(*) FROM qmastats WHERE species=='%s';'''%species)==0:
                 print 'No stats in qmastats for species %s. Using stats for "%s".'%(species,self.load_qmastats)
                 self.db.Execute('''INSERT INTO qmastats(species,qma,stat) SELECT '%s','%s'||(CASE length(qma)>4 WHEN 1 THEN substr(qma,4,2) ELSE substr(qma,4,1) END),stat FROM qmastats WHERE species=='%s';'''%(species,species,self.load_qmastats))
+
+        # Load QMR data (this is the same across datatsets) so should be in the groomer home
+        # directory.
+        try: self.loadFile('qmr',filename=os.path.join(home,'qmr.txt'))
+        except Exception, e: print e,'Ignoring'
+
+        # Load catch history data
+        try: self.loadFile('history',filename='history.csv')
+        except Exception, e: print e,'Ignoring'
 
         self.db.Execute('''INSERT INTO status(task,done) VALUES('load',datetime('now'));''')
         self.db.Commit()
@@ -686,7 +699,7 @@ go
         self.db.Execute('''DROP TABLE IF EXISTS stats_zones;''')  
         self.db.Execute('''CREATE TABLE stats_zones(stat TEXT,zone TEXT);''')  
         if self.zones is None:
-            zones = file("/home/nbentley/Trophia/Tanga/Data/shared/stats_zones.txt")
+            zones = file(os.path.join(home,"stats_zones.txt"))
             zones.readline() ##Header
             for values in [line.split('\t') for line in zones.read().split('\n') if len(line)>0]:  
                 if values[1]==fishstock:  self.db.Execute('''INSERT INTO stats_zones VALUES(?,?);''',(values[2],values[3]))

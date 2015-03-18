@@ -224,11 +224,6 @@ class FELLS(FE):
 	column = 'lat/lon'
 	
 	def do(self):
-		##Load in bounding box data
-		self.db.Execute('''DROP TABLE IF EXISTS stats_boxes;''')  
-		self.db.Execute('''CREATE TABLE stats_boxes(stat TEXT,latmin REAL,latmax REAL,lonmin REAL,lonmax REAL);''')  
-		stat_boxes = file("/home/nbentley/Trophia/Tanga/Data/shared/stats_boxes.txt")
-		for values in [line.split(' ') for line in stat_boxes.read().split('\n') if len(line)>0]: self.db.Execute('''INSERT INTO stats_boxes VALUES(?,?,?,?,?);''',values)
 		##Change lats and lons.
 		for stat,latmin,latmax,lonmin,lonmax in self.db.Rows('''SELECT * FROM stats_boxes;'''):
 			self.change(column='lat',clause='''start_stats_area_code=='%s' AND lat NOT BETWEEN %s-0.1 AND %s+0.1'''%(stat,latmin,latmax),value=None)

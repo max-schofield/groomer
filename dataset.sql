@@ -244,3 +244,12 @@ CREATE TABLE qmastats (
 );
 CREATE INDEX qmastats_qma ON qmastats(qma);
 
+DROP TABLE IF EXISTS stats_boxes;
+CREATE TABLE stats_boxes(
+	stat TEXT,
+	latmin REAL,
+	latmax REAL,
+	lonmin REAL,
+	lonmax REAL
+);
+CREATE INDEX stats_boxes_stat ON stats_boxes(stat);
