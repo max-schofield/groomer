@@ -94,7 +94,7 @@ based on the SQL that we have received from MFish in previous extracts. It invol
 and extracts of various data based on this table. Could you please supply us with the final SQL used, so that for future extracts we can
 correct any errors or omissions that we have made.
 
-The request is subject to the conditions of the existing confidentiality agreement between MFish and Trophia.
+The request is subject to the conditions of the existing confidentiality agreement between MPI and us.
 Please contact me by email if you require any further details to support this request.
         '''
 
@@ -181,7 +181,7 @@ group by fi.%s;
         if self.request_extra_notes: email += '\n\n%s\n\n'%self.request_extra_notes
 
         email += '\n\n'
-        email += 'This request is subject to the conditions of the existing confidentiality agreement between MPI and Trophia. '
+        email += 'This request is subject to the conditions of the existing confidentiality agreement between MPI and us. '
         email += 'Please don\'t hesitate to contact me if you require any further details.'
     
         ##Separate files for each extract file
