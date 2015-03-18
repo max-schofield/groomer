@@ -1,4 +1,6 @@
-## groomer : Grooming (and other things!) for New Zealand fisheries catch and effort data
+# groomer
+
+<img alt="Gratuitous image of an implement used for grooming" src="http://upload.wikimedia.org/wikipedia/commons/thumb/9/97/Black_Comb.jpg/320px-Black_Comb.jpg" align="middle">
 
 ### What and why
 
