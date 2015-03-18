@@ -302,5 +302,17 @@ Amongst other things, `simplify()` does:
 
 ### Summarize method
 
-The `summarise()` method, produces a HTML report with tables and figures that summarises the error checking and allocation.
+A dataset's `summarise()` method, produces a HTML report with tables and figures that summarizes the error checking and allocation done. The method iterates over the `Check.List` and for each check adds sections with headings and introductory text using the `brief` and `desc` attributes (as shown for `FESDM` above). In addition, it and calls the `summarise()` method of each check which returns a HTML `<div>` element that is appended to the report. The base `Check` class has a `summarise()` method which produces a table of the records flagged or changed by the check. This can be overridden to produce custom summaries, including figures, for specific checks. For example, the `LADUP` check which checks for landing duplicated on both CELR and CER forms, has this `summarise()` method:
 
+```py
+	def summarise(self):
+		div = Check.summarise(self)
+		div += FARTable(
+			'''%s Errors by fishstock_code,state_code,destination_type'''%self.code(),
+			('Fishstock','State','Destination','Records','Landings (t)'),
+			self.db.Rows('''SELECT fishstock_code,state_code,destination_type,count(*),sum(green_weight)/1000 FROM landing WHERE flags LIKE '%LADUP%' GROUP BY fishstock_code,state_code,destination_type;''')
+		)
+		return div
+```
+
+The HTML report is saved in the project directory as `summary.html` with any images for graphs stored in the `summary` sub-directory.
