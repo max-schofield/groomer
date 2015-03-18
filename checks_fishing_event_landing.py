@@ -24,12 +24,13 @@ class FLINI(Check):
 class FLSAU(Check):
 	brief = 'Statistical area unmatched by landing'
 	desc = '''		
-		##FSM (fishstock/stat match) checks
-		##Check that the recorded combinations of landing.fishstock_code and fishing_event.start_stats_area_code are valid:
-		##	- each fishstock_code has a corresponding start_stats_area_code
-		##	- each start_stats_area_code has a corresponding fishstock_code
-		## Create tables of fishstocks, ports and stats by trip 
-		Apart from being inconsistent, these trips need to be dropped because landings can not be allocated properly
+		Check that the recorded combinations of <i>landing.fishstock_code</i> and <i>fishing_event.start_stats_area_code</i> are valid:
+		<ul>
+			<li>each <i>fishstock_code</i> has a corresponding <i>start_stats_area_code</i>
+			<li>each <i>start_stats_area_code</i> has a corresponding <i>fishstock_code</i>
+		</ul>
+		Apart from being inconsistent, these trips need to be dropped because landings can not be allocated properly when there is no match between 
+		Fishstock and the statistical area for the trip.
 	'''
 	table = 'fishing_event'
 	column = 'start_stats_area_code'

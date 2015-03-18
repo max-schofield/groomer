@@ -26,6 +26,7 @@ Check.List = [
 	FESDF,
 	FEPMI,
 	FEPMM,
+	FETSE,
 	FETSW,
 	FETSI,
 	FETSM,

@@ -15,7 +15,7 @@ NotDefined = NotDefined()
 
 class Check:
     
-        fishing_years = range(1990,2012)
+        fishing_years = range(1990,2016)
 	
 	#The database connection
 	db = None

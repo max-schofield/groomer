@@ -30,46 +30,52 @@ class LA(Check):
 
 class LADAM(LA):
 	brief = 'Date is missing'
+	desc = '''
+		The landing date/time can be missing. This check flags those records but no attempt is made to impute the date/time.
+	'''
 	column = 'landing_datetime'
 	clause = '''landing_datetime IS NULL'''
 	
 class LADAF(LA):
 	brief = 'Date is in the future'
+	desc = '''
+		The landing date/time can be in the future. This check flags those records but no attempt is made to correct date/time.
+	'''
 	column = 'landing_datetime'
 	clause = '''landing_datetime>datetime('now')'''
 	
 class LADTI(LA):
 	brief = 'Destination type is invalid'
-	desc = '''Drop invalid destination codes (Starr D.1.1). The following is from the Warehou documentation v8.0:
-		<pre>
-			destination_type destination_type_desc destination_indicator
-			A Accidental loss N
-			B Stored as Bait N
-			C Disposed to crown L
-			D Discarded (NON-ITQ) N
-			E Eaten N
-			F Section 111 Recreational Catch N
-			H Loss from Holding Pot N
-			L Landed in NZ (to LFR) L
-			M QMS returned to sea (Part 6A) N
-			O Conveyed outside NZ O
-			P Holding receptacle in the water N
-			Q Holding receptacle on land N
-			R Retained on board N
-			S Seized by crown L
-			T Transfer to another vessel V
-			U Used for Bait N
-			W Sold at wharf O
-			X QMS returned to sea, except 6A N
-		</pre>'''
+	desc = '''This check removes invalid destination codes based on the following list of valid from the Warehou documentation v8.0:
+		<ul>
+			<li>A Accidental loss 
+			<li>B Stored as Bait 
+			<li>C Disposed to crown 
+			<li>D Discarded (NON-ITQ) 
+			<li>E Eaten 
+			<li>F Section 111 Recreational Catch 
+			<li>H Loss from Holding Pot 
+			<li>L Landed in NZ (to LFR) 
+			<li>M QMS returned to sea (Part 6A) 
+			<li>O Conveyed outside NZ 
+			<li>P Holding receptacle in the water 
+			<li>Q Holding receptacle on land 
+			<li>R Retained on board 
+			<li>S Seized by crown
+			<li>T Transfer to another vessel
+			<li>U Used for Bait
+			<li>W Sold at wharf
+			<li>X QMS returned to sea, except 6A
+		</ul>'''
 	column = 'destination_type'
 	list = ('A','B','C','D','E','F','H','L','M','O','P','Q','R','S','T','U','W','X')
 	clause =  '''destination_type NOT IN %s'''%repr(list)
+
 	def summarise(self):
 		div = Div()
 		div += P('The following tables summarise records in the <i>landing</i> table by <i>destination_type</i>.')
                 
-                #By code across years
+        #By code across years
 		rows = []
 		for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
 			rows += self.db.Rows('''SELECT 
@@ -93,17 +99,21 @@ class LADTI(LA):
                 
                 # By code and year for each species
 		div += FARTable(
-			'''Records in the <i>landing</i> table by species_code, destination_type and fishing_year''',
+			'''Records in the <i>landing</i> table by species_code, destination_type and fishing_year for the top three destination codes.''',
 			('Species','Destination','Fishing year','Records','Landings (t)'),
 			self.db.Rows('''
-                            SELECT 
-                                species_code,
-                                destination_type,
-                                fishing_year,
-                                count(*),
-                                sum(green_weight)/1000
-                            FROM landing 
-                            GROUP BY species_code,destination_type,fishing_year;''')
+                SELECT 
+                    species_code,
+                    destination_type,
+                    fishing_year,
+                    count(*),
+                    sum(green_weight)/1000
+                FROM landing
+                WHERE 
+                	species_code IS NOT NULL AND
+                	destination_type IN (SELECT destination_type FROM landing GROUP BY destination_type ORDER BY sum(green_weight) DESC LIMIT 3)
+                GROUP BY species_code,destination_type,fishing_year;
+             ''')
 		)
                 
                 
@@ -120,6 +130,7 @@ class LADTH(LA):
 	amount of data.'''
 	column = 'destination_type'
 	clause = '''destination_type IN ('P','R','Q')'''
+
 	def summarise(self):
 		div = Div()
 		count = self.db.Value('''SELECT count(*) FROM checks WHERE code='%s';'''%(self.code()))
@@ -173,7 +184,7 @@ class LADTT(LA):
 		else: 
 			p += 'A total of %i landing records were flagged by this check.The following'%count
 			rows = []
-			for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
+			for species in self.db.Values('''SELECT DISTINCT species_code FROM landing WHERE species_code IS NOT NULL;'''):
 				rows += self.db.Rows('''
 				SELECT 
 					species_code,
@@ -247,9 +258,9 @@ class LASCI(LA):
 			'LIV','MKF','MGU','HGT','HGF','GGU','SHU','ROE','HDS','HET','FIT','SHF','MBS','MBH','MEB','FLP','BEA','LIB',
 			'CHK','LUG','SWB','WIN','OIL','TNB','GBP')
 	desc = '''
-		Remove invalid state_codes. Change invalid state codes to NULL.
-		This is a list of state_codes from http://www.fish.govt.nz/en-nz/Research+Services/Research+Database+Documentation/fish_ce/Appendix+1.htm: %s
-	'''%(','.join(valid))
+		Change invalid state codes to NULL.
+		The following list of valid state_codes was obtained from <a href="http://www.fish.govt.nz/en-nz/Research+Services/Research+Database+Documentation/fish_ce/Appendix+1.htm">the Ministry for Primary Indistries website</a>: %s
+	'''%(', '.join(valid))
 	column = 'state_code'
 	clause = '''state_code NOT IN %s'''%repr(valid)
 	value = None
@@ -257,7 +268,7 @@ class LASCI(LA):
 class LASCD(LA):
 	drop = True
 	brief = 'State codes for body parts'
-	desc = '''"Drop landings where state code==FIN|==FLP|==SHF|==ROE and there is more than one record for the trip/Fishstock combination."(Starr D.1.6)'''
+	desc = ''' Starr (2011) suggests "Drop landings where state code==FIN|==FLP|==SHF|==ROE and there is more than one record for the trip/Fishstock combination."'''
 	column = 'state_code'
 	
 	def do(self):
@@ -284,7 +295,7 @@ class LADUP(LA):
 	drop = True
 	brief = 'Landing duplicated on CLR form'
 	columns = ['vessel_key','landing_datetime','fishstock_code','state_code','destination_type','unit_type','unit_num','unit_weight','green_weight']
-	desc = '''(Starr D.1.2): "Look for duplicate landings on multiple (CELR and CLR) forms. Keep only a single version if determined that the records are duplicated"
+	desc = '''Starr (2011) suggests "Look for duplicate landings on multiple (CELR and CLR) forms. Keep only a single version if determined that the records are duplicated"
 	If the following fields are duplicated across form types then drop all but the CEL record: %s  Do this after state_code, destination_type etc have been fixed up.'''%(','.join(columns))
 	def do(self):
 		template = '''form_type!='CEL' '''
@@ -307,7 +318,7 @@ class LADUP(LA):
 class LACFM(LA):
 	brief = 'Conversion factor missing'
 	desc='''
-		COM (Starr D.1.3): "Find missing conversion factor fields and insert correct value for relevant state code and fishing year.
+		Starr suggests "Find missing conversion factor fields and insert correct value for relevant state code and fishing year.
 		Missing fields can be inferred from the median of the non-missing fields"
 		For each state_code replace missing values with median.
 		Starr D.1.3 suggests "Find missing conversion factor fields and insert correct value for relevant state code and fishing year.Missing fields can be inferred from the median of the non-missing fields."
@@ -337,6 +348,9 @@ class LACFM(LA):
 
 class LACFC(LA):
 	brief = 'Conversion factor changed'
+	desc='''
+		Check for any changes in conversion factors and make necessary corrections.
+	'''
 	column = 'conv_factor'
 	
 	def do(self):
@@ -414,14 +428,17 @@ class LACFC(LA):
 class LAGWI(LA):
 	brief = 'Green weight imputation'
 	desc = '''
-		##GRC,GRO,GRM (Starr D.1.7): "Check for missing data in the unit_num and unit_weight fields. Drop records where greenweight=0 or =NULL and either unit_num and unit_weight is missing.
-		## Missing greenweight can be estimated"
+		Starr (2011) suggests "Check for missing data in the unit_num and unit_weight fields. Drop records where greenweight=0 or =NULL and either unit_num and unit_weight is missing.
+		Missing greenweight can be estimated"
 	'''
 	column = 'green_weight'
 	
 	def do(self):
 		self.change(clause='''conv_factor IS NOT NULL AND (green_weight=0 OR green_weight IS NULL)''',expr='conv_factor*unit_num*unit_weight',details='1')
 		self.change(clause='''conv_factor IS NULL AND (green_weight=0 OR green_weight IS NULL)''',expr='unit_num*unit_weight',details='2')
+
+	def summarise(self):
+		return ""
 		
 class LAGWM(LA):
 	drop = True
@@ -433,13 +450,15 @@ class LAGWM(LA):
 class LAGWR(LA):
 	drop = True
 	brief = 'Green weight outliers'
-	desc = '''GRR (Starr D.1.9): "Check for out of range landings"
-	Tho be flagged by this check
+	desc = '''This check follows the method of Starr (2011) for checking for out of range landings.
 	'''
 	column = 'green_weight'
 	
-	##The minimum number of landing events
-	landingsMin = 1000
+	# Specify which species to run this check on
+	species = None
+
+	# The minimum number of landing events
+	landings_min = 1000
 	
 	class Trip:
 		'Class for recording details about a trip'
@@ -461,18 +480,24 @@ class LAGWR(LA):
 		self.db.Execute('''DROP TABLE IF EXISTS check_LAGWR''')
 		self.db.Execute('''CREATE TABLE IF NOT EXISTS check_LAGWR (species TEXT,method TEXT,events INTEGER,proportion REAL,landings_threshold REAL,cpue_threshold REAL);''')
 		
+		# Determine the list of species that this check will be conducted on
+		if self.species: species_list = self.species
+		else:
+			species_list = self.db.Values('''
+				SELECT species_code
+				FROM landing  
+				WHERE species_code IS NOT NULL 
+				GROUP BY species_code 
+				HAVING count(*)>=%s 
+				ORDER BY count(*)  DESC;'''%self.landings_min
+			)
+
 		##.1 "Find all landing events which are greater than the appropriate ProcA value. Values smaller than ProcA
 		## can be used to make a more complete search of the data. Identify the trip numbers associated with these
 		## landing events. Calculate for these trips: a) the total greenweight; b) the calculated greenweight"
 		print
-		for species,count in self.db.Rows('''
-			SELECT species_code,count(*) 
-			FROM landing  
-			WHERE species_code IS NOT NULL 
-			GROUP BY species_code 
-			HAVING count(*)>=%s 
-			ORDER BY count(*)  DESC;'''%self.landingsMin): 
-			print species,count
+		for species in species_list: 
+			print species
 			
 			trips = {}
 			##.2 "Extract the fishing event data for these trips. Summarise for the trips using method m: a) the total effort; b) the total estimated catch. 
@@ -522,7 +547,7 @@ class LAGWR(LA):
 				'''INSERT INTO check_LAGWR_%s VALUES(?,?,?,?,?,?)'''%(species),
 				[(id, trip.sum_green_weight, trip.sum_calc_weight, trip.sum_est_weight, trip.ratio_green_calc, trip.ratio_green_est) for id,trip in trips.items()])
 
-			##Determine the most important methods for this species in the dataset by finding those that account for 80% of the catch
+			##Determine the most important methods for this species in the dataset by finding those that account for 90% of the catch
 			overall = self.db.Value('''SELECT count(*) FROM fishing_event WHERE trip IN (SELECT DISTINCT trip FROM landing WHERE species_code=='%s' AND trip IS NOT NULL);'''%species) 
 			cumulative = 0.0
 			for method,count in self.db.Rows('''
@@ -531,7 +556,7 @@ class LAGWR(LA):
 				WHERE trip IN (SELECT DISTINCT trip FROM landing WHERE species_code=='%s'  AND trip IS NOT NULL) 
 				GROUP BY primary_method HAVING count(*)>=100
 				ORDER BY count(*) DESC;'''%species):
-				if cumulative>0.8: break
+				if cumulative>0.9: break
 				proportion = float(count)/overall
 				cumulative += proportion
 					

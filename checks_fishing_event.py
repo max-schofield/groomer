@@ -23,7 +23,7 @@ class FE(Check):
 class FESDM(FE):
 	brief = 'Start date/time is missing'
 	desc = '''
-		The starting date/time for a fishing event can be missing. This check flags those records but no attempt is made to impute the datetime/time.
+		The starting date/time for a fishing event can be missing. This check flags those records but no attempt is made to impute the date/time.
 	'''
 	column = 'start_datetime'
 	clause = '''start_datetime IS NULL'''
@@ -31,7 +31,7 @@ class FESDM(FE):
 class FESDF(FE):
 	brief = 'End date/time is in the future'
 	desc = '''
-		The starting date/time for a fishing event can be in the future. This check flags those records but no attempt is made to cSt datetime/time.
+		The starting date/time for a fishing event can be in the future. This check flags those records but no attempt is made to correct date/time.
 	'''
 	column = 'start_datetime'
 	clause = '''start_datetime>datetime('now')'''
@@ -39,7 +39,7 @@ class FESDF(FE):
 class FEPMI(FE):
 	brief = 'Method imputation'
 	desc = '''		
-		This check follows the suggestion of Starr (2009) to replace missing values for the column <i>primary_method</i> with the value recorded for other fishing events in the trip providing those other values are all the same.
+		This check follows the suggestion of Starr (2011) to replace missing values for the column <i>primary_method</i> with the value recorded for other fishing events in the trip providing those other values are all the same.
 	'''
 	column = 'primary_method'
 	
@@ -67,10 +67,37 @@ class FEPMI(FE):
 class FEPMM(FE):
 	brief = 'Method missing'
 	desc = '''		
-		This check follows the suggestion of Starr (2009) to flag entire trips which have an event with a missing method.
+		This check follows the suggestion of Starr (2011) to flag entire trips which have an event with a missing method.
 	'''
 	column = 'primary_method'
 	clause = ''' trip IN (SELECT DISTINCT trip FROM fishing_event WHERE primary_method IS NULL AND trip IS NOT NULL)'''
+
+class FETSE(FE):
+	brief = 'Target species error'
+	desc = '''		
+		Replace invalid target species codes with the correct code where this is able to be inferred.
+	'''
+	column = 'target_species'
+	
+	def do(self):
+		self.change(clause=''' target_species=='BAS' ''',value='HPB')
+		self.change(clause=''' target_species=='HAP' ''',value='HPB')
+
+	def summarise(self):
+		div = Div()
+		div += FARTable(
+			'''Number of fishing events where an invalid <i>target_species</i> code was replaced. A maximum of the top ten invalid codes are listed.''',
+			('Orginal value','Replacement value','Fishing events'),
+			self.db.Rows('''
+				SELECT orig,new,count(*) 
+				FROM checks 
+				WHERE code=='FETSE' 
+				GROUP BY orig, new
+				ORDER BY count(*) DESC 
+				LIMIT 10;
+			''')
+		)
+		return div
 	
 class FETSW(FE):
 	brief = 'Target species invalid'
@@ -81,7 +108,7 @@ class FETSW(FE):
 	clause = '''target_species NOT IN (
 		'AGR','ALB','ANC','ANG','ATO','BAR','BBE','BCA','BCD','BCO','BCR','BEA','BEE','BEL','BEM','BFL','BGZ','BIG','BKM','BMA','BNS','BOA','BOE','BOX','BPF','BRA','BRC','BRI','BRZ','BSH','BSK','BSP','BSQ','BTU','BUT',
 		'BWH','BWS','BYA','BYX','CAC','CAN','CAR','CDL','CHC','CHI','CMO','COC','COE','COL','CON','CRA','CRB','CSQ','CTU','CYO','CYP','DAN','DEA','DIS','DOF','DSK','DSS','DSU','DWD','DWE','ECO','EEL','EGR','ELE',
-		'EMA','EMP','EPD','EPL','EPR','ERA','ESO','ETB','ETL','FHD','FLA','FLY','FRO','GAR','GFL','GLM','GMU','GRA','GSC','GSE','GSH','GSP','GSQ','GTR','GUR','HAG','HAK','HEP','HHS','HJO','HOK','HOR','HPB','ICX',
+		'EMA','EMP','EPD','EPL','EPR','ERA','ESO','ETB','ETL','FHD','FLA','FLY','FRO','GAR','GFL','GLM','GMU','GRA','GSC','GSE','GSH','GSP','GSQ','GTR','GUR','HAP','HAG','HAK','HEP','HHS','HJO','HOK','HOR','HPB','ICX',
 		'JAV','JDO','JGU','JMA','KAH','KBB','KBL','KEL','KIC','KIN','KOH','KTA','KWH','LAN','LCH','LDO','LEA','LEG','LEP','LES','LFB','LFE','LIM','LIN','LSO','MAK','MCA','MDI','MDO','MMI','MOK','MOO','MOR','MRL','MSG','MSP','MUN','MUS',
 		'NOT','NSD','NTU','OAR','OCT','OEO','OFH','ONG','OPE','ORH','OSD','OYS','OYU','PAD','PAR','PAU','PDG','PDO','PGR','PHC','PIG','PIL','PIP','PMA','POP','POR','POS','POY','PPI','PRA','PRK','PTE','PTO','PZL','QSC',
 		'RAG','RAT','RBM','RBT','RBY','RCO','RDO','RHY','RIB','RMO','ROC','RPE','RRC','RSK','RSN','RUD','SAE','SAI','SAL','SAM','SAU','SBK','SBO','SBW','SCA','SCC','SCG','SCH','SCI','SCM','SCO','SDO','SEM','SEV','SFE',
@@ -89,11 +116,27 @@ class FETSW(FE):
 		'SWA','SWO','TAR','THR','TOA','TOR','TRE','TRS','TRU','TUA','TUR','VCO','WAH','WAR','WGR','WHE','WHR','WHX','WIT','WOE','WRA','WSE','WSQ','WWA','YBF','YEM','YFN'
 	)'''
 	value = None
+
+	def summarise(self):
+		div = Div()
+		div += FARTable(
+			'''Number of fishing events where an invalid <i>target_species</i> code was made NULL. A maximum of the top ten invalid codes are listed.''',
+			('Target species','Fishing events'),
+			self.db.Rows('''
+				SELECT orig,count(*) 
+				FROM checks 
+				WHERE code=='FETSW' 
+				GROUP BY orig 
+				ORDER BY count(*) DESC 
+				LIMIT 10;
+			''')
+		)
+		return div
 	
 class FETSI(FE):
 	brief = 'Target species imputation'
 	desc = '''		
-		This check follows the suggestion of Starr (2009) to replace missing values for the column <i>target_species</i> with the most frequently recorded value for other fishing events in the trip.
+		This check follows the suggestion of Starr (2011) to replace missing values for the column <i>target_species</i> with the most frequently recorded value for other fishing events in the trip.
 	'''
 	column = 'target_species'
 	
@@ -105,13 +148,15 @@ class FETSI(FE):
 	def summarise(self):
 		div = Div()
 		div += FARTable(
-			'''Number of fishing events by imputed value for <i>target_species</i>.''',
+			'''Number of fishing events by imputed value for <i>target_species</i>. A maximum of the top ten imputed codes are listed.''',
 			('Target species','Fishing events'),
 			self.db.Rows('''
 				SELECT target_species, count(*) 
 				FROM fishing_event
 				WHERE flags LIKE '%%%s%%'
 				GROUP BY target_species
+				ORDER BY count(*) DESC
+				LIMIT 10
 			'''%self.code())
 		)
 		return div
@@ -119,7 +164,7 @@ class FETSI(FE):
 class FETSM(FE):
 	brief = 'Target species missing'
 	desc = '''		
-		This check flags trips where target species is missing.
+		This check follows the suggestion of Starr (2011) to flag entire trips which have an event with a missing target species.
 	'''
 	column = 'target_species'
 	clause = '''trip IN (SELECT DISTINCT trip FROM fishing_event WHERE target_species IS NULL AND trip IS NOT NULL)'''
@@ -127,8 +172,7 @@ class FETSM(FE):
 class FESAI(FE):
 	brief = 'Statistical area imputation'
 	desc = '''		
-		(Starr D.2.2): "Search for missing statistical area fields. a) drop the entire trip if all statistical areas are missing in the trip;
-		b) substitute the 'predominant' (most frequent) statistical area for the trip for trips which report the statistical area fished in other records.
+		Starr (2011) suggests to search for missing statistical area fields and substitute the 'predominant' (most frequent) statistical area for the trip for trips which report the statistical area fished in other records.
 	'''
 	column = 'start_stats_area_code'
 	
@@ -136,26 +180,41 @@ class FESAI(FE):
 		for trip in self.db.Values('''SELECT DISTINCT trip FROM fishing_event WHERE start_stats_area_code IS NULL AND trip IS NOT NULL'''):
 			value = self.db.Value('''SELECT start_stats_area_code FROM fishing_event WHERE start_stats_area_code IS NOT NULL AND trip=? GROUP BY start_stats_area_code ORDER BY count(*) DESC LIMIT 1''',[trip])
 			if value: self.change(clause='''start_stats_area_code IS NULL AND trip=%s'''%trip,value=value)
+
+	def summarise(self):
+		return ""
 		
 class FESAM(FE):
 	brief = 'Statistical area missing'
+	desc = '''
+		This check follows the suggestion of Starr (2011) to flag entire trips which have an event with a missing statistical area
+	'''
 	column = 'start_stats_area_code'
 	clause = '''trip IN (SELECT DISTINCT trip FROM fishing_event WHERE start_stats_area_code IS NULL AND trip IS NOT NULL)'''
 	
 class FELLI(FE):
 	brief = 'Position (lat/lon) imputation'
-	desc = ''''''
+	desc = '''
+		This checks sets the fields <i>start_latitude,start_longitude,end_latitude,end_longitude</i> to NULL where they are 999.9 (the MPI value indicating null latitude or longitude).
+		It also creates the fields <i>lat</i> and <i>lon</i> which are equal to the <i>start_latitude</i> and <i>start_longitude</i> unless those are missing in which
+		case end positions are used.
+	'''
 	column = 'lat/lon'
+
 	def do(self):
 		self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN lat REAL;''') 
 		self.db.Alter('''ALTER TABLE fishing_event ADD COLUMN lon REAL;''')  
 		
 		##Set lat and lon to NULL where 999.9
-		for field in ('start_latitude','start_longitude','end_latitude','end_longitude'): self.db.Execute('''UPDATE fishing_event SET %s==NULL WHERE %s=999.9'''%(field,field))
+		for field in ('start_latitude','start_longitude','end_latitude','end_longitude'):
+			self.db.Execute('''UPDATE fishing_event SET %s==NULL WHERE %s=999.9'''%(field,field))
 			
 		self.db.Alter('''UPDATE fishing_event SET lat=start_latitude, lon=start_longitude;''')  
 		self.db.Alter('''UPDATE fishing_event SET lat=end_latitude WHERE lat IS NULL;''') 
 		self.db.Alter('''UPDATE fishing_event SET lon=end_longitude WHERE lon IS NULL;''') 
+
+	def summarise(self):
+		return ''
 		
 class FELLS(FE):
 	brief = 'Position (lat/lon) outside of statistical area'
@@ -168,16 +227,20 @@ class FELLS(FE):
 		##Load in bounding box data
 		self.db.Execute('''DROP TABLE IF EXISTS stats_boxes;''')  
 		self.db.Execute('''CREATE TABLE stats_boxes(stat TEXT,latmin REAL,latmax REAL,lonmin REAL,lonmax REAL);''')  
-		stat_boxes = file("/Trophia/Tanga/Data/shared/stats_boxes.txt")
+		stat_boxes = file("/home/nbentley/Trophia/Tanga/Data/shared/stats_boxes.txt")
 		for values in [line.split(' ') for line in stat_boxes.read().split('\n') if len(line)>0]: self.db.Execute('''INSERT INTO stats_boxes VALUES(?,?,?,?,?);''',values)
 		##Change lats and lons.
 		for stat,latmin,latmax,lonmin,lonmax in self.db.Rows('''SELECT * FROM stats_boxes;'''):
 			self.change(column='lat',clause='''start_stats_area_code=='%s' AND lat NOT BETWEEN %s-0.1 AND %s+0.1'''%(stat,latmin,latmax),value=None)
 			self.change(column='lon',clause='''start_stats_area_code=='%s' AND lon NOT BETWEEN %s-0.1 AND %s+0.1'''%(stat,lonmin,lonmax),value=None)
+
+	def summarise(self):
+		return ""
+		
 			
 class FEFMA(FE):
 	brief = 'Fisheries management area ambiguous'
-	desc = '''Starr E.1.4 Mark trips which landed to more than one **other** (not in fishstocks) fishstock for straddling statistical areas.Since this relies on fishing event.start_stats_area_code do this after grooming on that'''
+	desc = '''Starr (2011) suggest to mark trips which landed to more than one fishstock for straddling statistical areas. Since this relies on fishing event.start_stats_area_code do this check after grooming on that.'''
 	
 	def do(self):
 		##For each species determine those events which may be outside the area of interest...
@@ -238,7 +301,7 @@ class FEETN(FE):
 	def summarise(self):
 		div = Div()
 		div += P('''The following figures provide summaries of the relationship between the total potlifts and the number of pots in the water at midnight for 
-			cod potting (CP).''')
+			events where cod potting (CP) was the primary method.''')
 		div += FARTable(
 			'''The number of fishing events flagged according by effort_total_num (using bins of width 10)''',
 			('effort_total_num','Fishing events flagged'),
@@ -262,11 +325,27 @@ class FEETN(FE):
 				caption = '''Relationship between total potlifts (effort_total_num) and pots in the water at midnight (effort_num) for method %s.'''%method
 			)
 		return div
+
+class FEEHN(FE):
+	brief = 'Transposing of number of sets and and total hook number for lining methods on CELR forms'
+	desc = '''
+		On CELR forms, events which use a lining methods (BLL,SLL,DL and TL) are mean to record the "Number of sets hauled in a day " into the <i>effort_num</i> field
+		and the "Total number of hooks hauled in the day" in the <i>total_hook_num</i> field. These can be transposed. In this check for CELR forms with these methods, where <i>effort_num</i> is geater or
+		equal to 100 and <i>total_hook_num</i> is less than 100, these fields are transposed.
+
+	'''
+	column = 'effort_num/total_hook_num'
+	
+	def do(self):
+		for id,effort_num,total_hook_num in self.db.Rows('''SELECT id,effort_num,total_hook_num FROM fishing_event WHERE form_type=='CEL' AND primary_method IN ('BLL','SLL','DL','TL') AND effort_num>=100 AND total_hook_num<100'''):
+			self.db.Execute('''UPDATE fishing_event SET effort_num=%s, total_hook_num=%s, flags=flags||'%s ' WHERE id=%s'''%(total_hook_num,effort_num,'FEEHN',id))
+			self.db.Execute('''INSERT INTO checks(code,"table",id) VALUES ('%s','fishing_event',%s)'''%('FEEHN',id))
 		
 class FEEFO(FE):
 	brief = 'Outliers for effort fields'
 	desc = '''
-		(Starr D.2.4): "Operate grooming procedure on effort fields by method of capture and form type to truncate outlier values."
+		This check exammines effort fields by method and form type to detect and correct outlier values.
+		For each form type, checks were done on the most important effort fields. 
 	'''
 	column = 'various'
 	##The minimum number of events that a primary_method/form_type must have to be considered
@@ -413,7 +492,7 @@ class FEEFO(FE):
 	def summarise(self):
 		div = Div()
 		div += P('''
-			For each form type, checks were done on the most important effort fields. Checks were only done on a form type/field combination is there were at least %s records 
+			Checks were only done on a form type/field combination is there were at least %s records 
 			and that the number of NULL values for that field for that form type were less than %s%% of all records. These criteria avoid running checks on data that form a small part of the dataset
 			or which are recorded on an optional basis. The following table lists the form type/effort field combinations for which this check was done.
 		'''%(self.events,100-self.notnulls))
@@ -436,8 +515,8 @@ class FEEFO(FE):
 			'fishing_year': robjects.IntVector([row[3] for row in rows]),
 			'count': robjects.IntVector([row[4] for row in rows])
 		})
-		plot = ggplot2.ggplot(rows) + ggplot2.aes_string(x='fishing_year',y='count',colour='group') + ggplot2.geom_point() 
-		plot.plot()
+		#plot = ggplot2.ggplot(rows) + ggplot2.aes_string(x='fishing_year',y='count',colour='group') + ggplot2.geom_point() 
+		#plot.plot()
 			
 		for method,column,form in self.db.Rows('''SELECT primary_method,field,form_type FROM check_FEEFO WHERE substitutions IS NOT NULL;'''):
 			rows = self.db.Rows('''
@@ -448,19 +527,21 @@ class FEEFO(FE):
 			'''%(method,column,form))
 			
 			if len(rows)>0:
-				filename = 'summary/FEEFO Orig New %s%s%s.png'%(method,column,form)
-				R.png(filename,600,400)
-				#R.plot([x for x,y,c in rows],[y for x,y,c in rows],cex=[math.sqrt(c) for x,y,c in rows],xlab='Original value',ylab='Substituted value',pch=1)
-                                #plot = ggplot2.ggplot(rows) + ggplot2.aes_string(x='fishing_year',y='count',colour='group') + ggplot2.geom_point() 
-                                #plot.plot()
-				R.dev_off()
-				div += FARFigure(filename,'%s %s %s'%(method,column,form))
+				pass
 				
-				filename = 'summary/FEEFO Hist Old %s%s%s.png'%(method,column,form)
-				R.png(filename,600,400)
+				#filename = 'summary/FEEFO Orig New %s%s%s.png'%(method,column,form)
+				#R.png(filename,600,400)
+				#R.plot([x for x,y,c in rows],[y for x,y,c in rows],cex=[math.sqrt(c) for x,y,c in rows],xlab='Original value',ylab='Substituted value',pch=1)
+				#plot = ggplot2.ggplot(rows) + ggplot2.aes_string(x='fishing_year',y='count',colour='group') + ggplot2.geom_point() 
+				#plot.plot()
+				#R.dev_off()
+				#div += FARFigure(filename,'%s %s %s'%(method,column,form))
+				
+				#filename = 'summary/FEEFO Hist Old %s%s%s.png'%(method,column,form)
+				#R.png(filename,600,400)
 				#R.hist([float(x) for x,y,c in rows if x is not None],xlab='Original value',main='',breaks=30)
-				R.dev_off()
-				div += FARFigure(filename,'%s %s %s'%(method,column,form))
+				#R.dev_off()
+				#div += FARFigure(filename,'%s %s %s'%(method,column,form))
 			
 		return div
 

@@ -56,13 +56,3 @@ class TDDAB(Check):
 		
 	def summarise(self):
 		return self.histogram('trip_details','trip_length',xlab='Trip length (days)',ylab='Trips',caption='Frequency distibution of trip length for all trips in dataset.')
-
-if __name__=='__main__':
-	Check.db = Database('/Trophia/Tanga/Data/spo18_mfish_spo201001/database.db3')
-	for check in [
-		TDSTA,
-		TDDAB
-	]:
-		inst = check()
-		inst.do()
-		inst.view()
