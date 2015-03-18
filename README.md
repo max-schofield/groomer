@@ -140,12 +140,12 @@ When you get the extract back from MPI you extract it into a subdirectory called
 
 The `groom()` method runs a series of checks. Each check is defined as a Python class derived from the `Check` class (defined in [check.py](check.py)) with a five letter name. The first two letters signify the table/s that the check relates to and the last three what the check checks for. Checks are grouped into files by table:
 
-Name prefix   |     Table            |    File
------------------------------------------------------------------
-TD            | `trip_details`       | [trip_details.py](trip_details.py)
-FE            | `fishing_event`      | [checks_fishing_event.py](checks_fishing_event.py)
-ES            | `estimated_subcatch`      | [checks_estimated_subcatch.py](checks_estimated_subcatch.py)
-LA            | `landing`      | [checks_landing.py](checks_landing.py)
+Name prefix   | Table/s                          |    File
+--------------|----------------------------------|---------------------------
+TD            | `trip_details`                   | [trip_details.py](trip_details.py)
+FE            | `fishing_event`                  | [checks_fishing_event.py](checks_fishing_event.py)
+ES            | `estimated_subcatch`             | [checks_estimated_subcatch.py](checks_estimated_subcatch.py)
+LA            | `landing`                        | [checks_landing.py](checks_landing.py)
 ES            | `fishing_event` & `landing`      | [checks_fishing_event_landing.py](checks_fishing_event_landing.py)
 
 The `Check` base class defines some useful methods that allow checks to be defined and documented succinctly. For example, the `FESDM` which check for missing start date/time in the `fishing_event` table is defined and documented as:
@@ -165,7 +165,9 @@ Other checks are more involved and implement a `do()` method that runs SQL in th
 ```py
 class FEFMA(FE):
 	brief = 'Fisheries management area ambiguous'
-	desc = '''Starr (2011) suggest to mark trips which landed to more than one fishstock for straddling statistical areas. Since this relies on fishing event.start_stats_area_code do this check after grooming on that.'''
+	desc = '''
+		Starr (2011) suggest to mark trips which landed to more than one fishstock for straddling statistical areas. Since this relies on fishing event.start_stats_area_code do this check after grooming on that.
+	'''
 	
 	def do(self):
 		##For each species determine those events which may be outside the area of interest...
@@ -202,7 +204,7 @@ There are two special checks, `CHINI` and `CHSTA`. `CHINI` is the first check co
 	);
 	```
 
-`CHSTA`, or its derivatives, is the first check run for each table. It adds a `flags` text column to a table. If a record is marked by a check then that check`s five letter code is added to `flags`. For example, a row in the `fishing_event` table might have a value for `flags` of `FESDM, FEPMI`.
+`CHSTA`, or its derivatives, is the first check run for each table. It adds a `flags` text column to a table. If a record is marked by a check then that check's five letter code is added to `flags`. For example, a row in the `fishing_event` table might have a value for `flags` of `FESDM, FEPMI`.
 
 When a check is run it can perform either a `flag` or a `change` on a record. Flags get recorded in the `flags` field, changes get recorded in the `checks` table.
 
@@ -260,11 +262,41 @@ Check.List = [
 
 ### Allocate method
 
+The `allocate()` method does what Starr (2007) called "merging" - it allocates landed catches (recorded at the trip level; stored in the `landing` table) to fishing events (in the `fishing_event` table). It does this using one of three methods:
+
+1. in proportion to estimated catches for the species, if any, otherwise,
+2. in proportion to number of effort units (`effort_num`), if a single method trip, otherwise,
+3. equally across all events for the trip.
+
+For each species for which landing are allocated, the `allocate()` method adds five new columns to the `fishing_event` table (where `XXX` is the species code):
+
+- `XXX_est` - total catch in the `estimated_subcatch` table for the species for the event
+- `XXX_equ` - the trip landings for the species allocated equally across events
+- `XXX_prop` - the trip landings for the species allocated to the event proportionally according to the above method
+- `XXX_prop_method` - the allocation method used; 1, 2, or 3 as above
+- `XXX_fishstocks` - the number of Fishstocks for the species for which landing were allocated (for events that occur in statistical areas that straddle QMA boundaries)
 
 ### Augment method
 
+The `augment()` adds columns that may be useful in further analyses to several tables once grooming and allocation is done. "Highlights" include:
+
+- a `fishing_year` column to tables where this does not exist
+- a `vessel_day` column for `fishing_event` which is the inverse of the number of events for that vessel/date
+- a `zone` column for `fishing_event` based on the statistical area and a user supplied mapping of stat area to zone
 
 ### Simplify method
 
+The `simplify()` method creates a simplified version of the database for use in characterisations. This method was designed for producing a stripped down dataset for consumption by the `tangaviewer` browser based analysis tool and a CPUE dataset for consumption by the `tangaanalyser` tool.
+
+Amongst other things, `simplify()` does:
+
+- hashes `vessel_keys` for obfuscation
+- creates a table `events` which is a near copy of `fishing_event` but with shorter names for easier typing
+- scales the landed catches up to the totals for the QMA in the fishing year based on QMR/MHR data
+- collapses minor levels of categorical variables into an `Other` level.
+- outputs a text file with `fishing_event` records suitable for CPUE analyses (those which do not have any effort grooming)
 
 ### Summarize method
+
+The `summarise()` method, produces a HTML report with tables and figures that summarises the error checking and allocation.
+
