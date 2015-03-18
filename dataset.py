@@ -83,7 +83,7 @@ class Dataset:
         email = '''
 Dear RDM,
 
-Trophia Ltd has been contracted by %s under project "%s" to analyse catch and effort data for %s. We would like
+We have been contracted by %s under project "%s" to analyse catch and effort data for %s. We would like
 to do an initial summary of the data for these Fishstocks so that we can determine the best set of criteria for our data extract.
 Please could you do a count of the number of fishing_events recording each primary_method, target_species, start_stats_area_code
 and form_type for all of the trips that landed to these Fishstocks between %s and %s.'''%(self.client,self.project,fishstocks,self.begin,self.end)
@@ -107,15 +107,15 @@ Please contact me by email if you require any further details to support this re
 /* Create temporary table with index on trip */
 use tempdb;
 go
-create table tempdb..trophia_%s (trip keys null);
+create table tempdb..%s (trip keys null);
 go
-create index index_1 on tempdb..trophia_%s (trip);
+create index index_1 on tempdb..%s (trip);
 go
         '''%(self.name,self.name)
 
         sql += '''
 /* Insert trips that meet landings criteria*/
-insert tempdb..trophia_%s
+insert tempdb..%s
 select distinct la.trip
 from warehou..ce_landing la
 where la.interp_yn = 'Y'
@@ -136,7 +136,7 @@ select
   count(*),
   sum(fi.effort_num),
   sum(fi.catch_weight)
-from warehou..ce_fishing_event fi,tempdb..trophia_%s tt
+from warehou..ce_fishing_event fi,tempdb..%s tt
 where fi.interp_yn = 'Y' and tt.trip = fi.trip
 group by fi.%s;
             '''%(factor,factor,self.name,factor)
@@ -154,7 +154,7 @@ group by fi.%s;
         fishstocks_quoted = ','.join([repr(item) for item in fishstocks_list])
 
         ##Email text
-        email = '''\nDear RDM,\n\nTrophia Ltd has been contracted by %s under project "%s" to analyse catch and effort data for %s. We would like to obtain catch and effort data for fishing trips that occurred between %s and %s, and which'''%(self.client,self.project,fishstocks,self.begin,self.end)
+        email = '''\nDear RDM,\n\nWe have been contracted by %s under project "%s" to analyse catch and effort data for %s. We would like to obtain catch and effort data for fishing trips that occurred between %s and %s, and which'''%(self.client,self.project,fishstocks,self.begin,self.end)
 
         if len(fishstocks_list)>0:  email += ''' landed to %s '''%(fishstocks)
 
@@ -194,15 +194,15 @@ group by fi.%s;
 use tempdb
 go
 
-create table tempdb..trophia_%s (trip keys null)
+create table tempdb..%s (trip keys null)
 go
 
-create index index_1 on tempdb..trophia_%s (trip)
+create index index_1 on tempdb..%s (trip)
 go
         '''%(self.name,self.name)
 
         tt += '''
-insert tempdb..trophia_%s
+insert tempdb..%s
 
 /* Insert trips that meet landings criteria*/
 select distinct la.trip
@@ -243,7 +243,7 @@ select
   td.end_datetime,
   td.vessel_key,
   td.client_key
-from warehou..ce_trip_details td,tempdb..trophia_%s tt
+from warehou..ce_trip_details td,tempdb..%s tt
 where tt.trip = td.trip
 go
         '''%self.name
@@ -301,7 +301,7 @@ select
   fi.dcf_key ,
   fi.form_type,
   fi.trip
-from warehou..ce_fishing_event fi,tempdb..trophia_%s tt
+from warehou..ce_fishing_event fi,tempdb..%s tt
 where fi.interp_yn = 'Y' and tt.trip = fi.trip
 go
         '''%(self.name)
@@ -317,7 +317,7 @@ select
   ca.species_code,
   ca.catch_weight,
   ca.trip
-from warehou..ce_estimated_subcatch ca,tempdb..trophia_%s tt
+from warehou..ce_estimated_subcatch ca,tempdb..%s tt
 where ca.interp_yn = 'Y'
   and tt.trip = ca.trip
 go
@@ -347,7 +347,7 @@ select
   pr.dcf_key,
   pr.form_type,
   pr.trip
-from warehou..ce_processed_catch pr,tempdb..trophia_%s tt
+from warehou..ce_processed_catch pr,tempdb..%s tt
 where pr.interp_yn = 'Y'
   and tt.trip = pr.trip
 go
@@ -384,7 +384,7 @@ select
   la.dcf_key,
   la.form_type,
   la.trip
-from warehou..ce_landing la, tempdb..trophia_%s tt
+from warehou..ce_landing la, tempdb..%s tt
 where la.interp_yn = 'Y'
   and tt.trip = la.trip
 go
@@ -417,7 +417,7 @@ from corporat..vs_vessel_history vs
 where vs.history_end_datetime >= '%s'
   and vs.history_start_datetime < '%s'
   and vs.vessel_key in (select distinct vessel_key
-  from warehou..ce_trip_details td,tempdb..trophia_%s tt
+  from warehou..ce_trip_details td,tempdb..%s tt
   where tt.trip = td.trip)
 go
         '''%(self.begin,self.end,self.name)
@@ -448,7 +448,7 @@ go
             ##Decide on extension
             ext = 'txt' if item=='email' else 'sql'
             ##Write to file
-            file('request/trophia_%s_%s.%s'%(self.name,item,ext),'w').write(content)
+            file('request/%s_%s.%s'%(self.name,item,ext),'w').write(content)
 
     def loadFile(self,table,filetags=None,filename=None,format=None):
         '''Function for reading a file into a table'''

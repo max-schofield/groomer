@@ -1,6 +1,4 @@
 '''
-Copyright Trophia Ltd 2011
-
 A module for importing, and providing a list of, all the checks defined in the other modules
 '''
 from check import Check
