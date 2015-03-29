@@ -699,7 +699,7 @@ go
         self.db.Execute('''DROP TABLE IF EXISTS stats_zones;''')  
         self.db.Execute('''CREATE TABLE stats_zones(stat TEXT,zone TEXT);''')  
         if self.zones is None:
-            zones = file(os.path.join(home,"stats_zones.txt"))
+            zones = file(os.path.join(home,"stats_zones.tsv"))
             zones.readline() ##Header
             for values in [line.split('\t') for line in zones.read().split('\n') if len(line)>0]:  
                 if values[1]==fishstock:  self.db.Execute('''INSERT INTO stats_zones VALUES(?,?);''',(values[2],values[3]))
