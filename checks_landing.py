@@ -571,7 +571,8 @@ class LAGWR(LA):
 				
 				effort_units = {
 					'BLL':'total_hook_num',
-					'SN':'total_net_length'
+					'SN':'total_net_length',
+					'CP':'max(effort_num,effort_total_num)'
 				}.get(method,'effort_num')
 				
 				##Calculate CPUE distribution for this method for each trip
@@ -601,7 +602,9 @@ class LAGWR(LA):
 					trip = trips[row[0]]
 					trip.green_high = 1
 					if (trip.ratio_green_calc>4 or trip.ratio_green_est>4) and trip.cpue>cpue_threshold:
-						trip.drop = 1		
+						trip.drop = 1
+					elif (trip.ratio_green_calc>10 or trip.ratio_green_est>10) and trip.cpue is None:
+						trip.drop = 1
 				
 				for id,trip in trips.items():
 					if trip.drop==1:
