@@ -28,6 +28,7 @@ Check.List = [
 	FETSW,
 	FETSI,
 	FETSM,
+	FESAS,
 	FESAI,
 	FESAM,
 	FELLI,

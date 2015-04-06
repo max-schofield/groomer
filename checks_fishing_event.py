@@ -168,6 +168,42 @@ class FETSM(FE):
 	'''
 	column = 'target_species'
 	clause = '''trip IN (SELECT DISTINCT trip FROM fishing_event WHERE target_species IS NULL AND trip IS NOT NULL)'''
+
+class FESAS(FE):
+	brief = 'Statistical area set incorrect'
+	desc = '''		
+		There are several sets of statistical area (e.g. general, rock lobster, scallop). The wrong set can used be used. In particular,
+		fishers that often use rock lobster stat areas can erroneously use them when using methods for which the general statistical areas
+		should be applied. Currently, this check changes rock lobster stat areas to general stat areas where there is an exact or
+		close match in the areas. Currently, this is only implemented for cod potting in the Chatham Islands.
+	'''
+	column = 'start_stats_area_code'
+	
+	def do(self):
+		for cra,gen in (
+			('940','049'),
+			('941','050'),
+			('942','051'),
+			('943','052'),
+		):
+			self.change(
+				clause = '''primary_method=='CP' AND start_stats_area_code==%s'''%cra,
+				value = gen
+			)
+
+	def summarise(self):
+		div = Div()
+		div += FARTable(
+			'''Numbers of fishing events for which statistical area was changed by the FESAS check by method.''',
+			('Method','Original','New','Fishing events'),
+			self.db.Rows('''
+				SELECT primary_method,orig,new,count(*)
+				FROM checks LEFT JOIN fishing_event USING (id)
+				WHERE checks.code=='FESAS'
+				GROUP BY primary_method,orig,new
+			''')
+		)
+		return div
 	
 class FESAI(FE):
 	brief = 'Statistical area imputation'
