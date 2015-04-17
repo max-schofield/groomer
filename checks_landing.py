@@ -203,14 +203,14 @@ class LADTT(LA):
 			p += 'A total of %i landing records were flagged by this check.The following'%count
 			rows = []
 			for species in self.dataset.species:
-				rows.append(self.db.Rows('''
+				rows += self.db.Rows('''
 				SELECT 
 					species_code,
 					count(*),
 					sum(green_weight)/1000,
 					sum(green_weight)/(SELECT sum(green_weight) FROM landing WHERE species_code='%s')*100
 				FROM landing
-				WHERE flags LIKE '%%LADTT%%' AND species_code=='%s';'''%(species,species)))
+				WHERE flags LIKE '%%LADTT%%' AND species_code=='%s';'''%(species,species))
 			p += FARTable(
 				'Summary of records flagged by this check by species.',
 				('Species','Landing events','Landings (t)','Landings (%)'),
