@@ -15,16 +15,16 @@ class LASTA(CHSTA):
 class LA(Check):
 	table = 'landing'
 	
-	##Whether of not landings whould be 'dropped' if this check fails
+	# Whether or not landings should be 'dropped' if this check fails
 	drop = False
 	
 	def flag(self,table=None,clause=None,details=None):
-		##In addition to Check.flag consider drop
+		# In addition to Check.flag consider drop
 		Check.flag(self,table,clause,details)
 		if self.drop: self.db.Execute('''UPDATE landing SET dropped=1 WHERE flags LIKE '%%%s%%';'''%self.code())
 	
-	def change(self,table=None,clause=None,column=None,value=NotDefined,expr=None,details=None):
-		##Check that don't have drop==Flase and calling change
+	def change(self,table=None,clause=None,column=None,value=NotDefined,expr=NotDefined,details=None):
+		# Check that this check has drop==False
 		assert self.drop==False
 		Check.change(self,table,clause,column,value,expr,details)
 
