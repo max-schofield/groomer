@@ -372,6 +372,16 @@ class FEEHN(FE):
 			self.db.Execute('''UPDATE fishing_event SET effort_num=%s, total_hook_num=%s, flags=flags||'%s ' WHERE id=%s'''%(total_hook_num,effort_num,'FEEHN',id))
 			self.db.Execute('''INSERT INTO checks(code,"table",id) VALUES ('%s','fishing_event',%s)'''%('FEEHN',id))
 		
+class FEEMU(FE):
+	brief = 'Incorrect measurement units for effort fields'
+	desc = '''
+		For netting methods, the mesh size (field `effort_width`) can be recorded in inches (e.g. 4) instead of mm (i.e. 100).
+		This check replaces all effort_width less than or equal to ten with the value time 25 (e.g. 4 becomes 100)
+	'''
+	column = 'effort_width'
+	criteria = 'primary_method=="SN" AND effort_width<=10'
+	value = 'effort_width*25'
+
 class FEEFO(FE):
 	brief = 'Outliers for effort fields'
 	desc = '''

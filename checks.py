@@ -35,6 +35,7 @@ Check.List = [
 	FELLS,
 	FEFMA,
 	FEETN,
+	FEEMU,
 	FEEFO,
 	
 	LASTA,
