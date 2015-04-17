@@ -123,9 +123,18 @@ class LAFLA(LA):
 	brief = 'Fishstock code is for a flatfish species'
 	desc = '''Occaisionaly flatfish landings are recorded using the species specific code (e.g. GFL) instead of the general flatfish code (FLA).
 			This check is done early so that total flatfish landings are checked in subsequent landings checks.'''
-	column = 'fishstock_code'
-	clause =  "substr(fishstock_code,1,3) IN ('BFL', 'BLF', 'BRI', 'ESO', 'FLO', 'GFL', 'LSO', 'SFL', 'SOL', 'TUR', 'WIT', 'YBF', 'BOT', 'GBL', 'MAN', 'SLS', 'SDF')"
-	expr = "'FLA'||substr(fishstock_code,4,5)"
+
+	def do(self):
+		self.change(
+			column = 'species_code',
+			clause = "substr(species_code,1,3) IN ('BFL','BLF','BRI','ESO','FLO','GFL','LSO','SFL','SOL','TUR','WIT','YBF','BOT','GBL','MAN','SLS','SDF')",
+			value = 'FLA'
+		)
+		self.change(
+			column = 'fishstock_code',
+			clause = "substr(fishstock_code,1,3) IN ('BFL','BLF','BRI','ESO','FLO','GFL','LSO','SFL','SOL','TUR','WIT','YBF','BOT','GBL','MAN','SLS','SDF')",
+			expr = "('FLA'||substr(fishstock_code,4,5))"
+		)
 
 	
 class LADTH(LA):
