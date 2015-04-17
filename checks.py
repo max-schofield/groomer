@@ -42,6 +42,7 @@ Check.List = [
 	LADAM,
 	LADAF,
 	LADTI,
+	LAFLA,
 	LADTH,
 	LADTT,
 	LASCF,
