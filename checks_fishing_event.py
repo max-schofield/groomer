@@ -379,8 +379,8 @@ class FEEMU(FE):
 		This check replaces all effort_width less than or equal to ten with the value time 25 (e.g. 4 becomes 100)
 	'''
 	column = 'effort_width'
-	criteria = 'primary_method=="SN" AND effort_width<=10'
-	value = 'effort_width*25'
+	clause = 'primary_method=="SN" AND effort_width<=10'
+	expr = 'effort_width*25'
 
 class FEEFO(FE):
 	brief = 'Outliers for effort fields'

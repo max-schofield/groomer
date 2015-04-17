@@ -33,6 +33,7 @@ class Check:
 	clause = None
 	column = None
 	value = NotDefined
+	expr = NotDefined
 	
 	#A complete listg of error checks
 	List = []
@@ -50,13 +51,14 @@ class Check:
 		self.db.Execute('''INSERT INTO checks(code,"table",id,details) SELECT '%s','%s',id, ? FROM %s WHERE %s; '''%(self.code(),self.table,self.table,clause),(details,))
 		self.db.Execute('''UPDATE %s SET flags=flags||'%s ' WHERE %s'''%(table,self.code(),clause))
 		
-	def change(self,table=None,clause=None,column=None,value=NotDefined,expr=None,details=None):
+	def change(self,table=None,clause=None,column=None,value=NotDefined,expr=NotDefined,details=None):
 		if table is None: table = self.table
 		if clause is None: clause = self.clause
 		if column is None: column = self.column
-		if value is NotDefined: value = self.value
 		assert table is not None and clause is not None and column is not None 
-		if expr is None:
+		if value is NotDefined: value = self.value
+		if expr is NotDefined and self.expr is not NotDefined: expr = self.expr
+		if expr is NotDefined:
 			self.db.Execute('''INSERT INTO checks(code,"table",column,id,details,orig,new) SELECT '%s','%s','%s',id, ?, %s,? FROM %s WHERE %s; '''%(self.code(),table,column,column,table,clause),(details,value,))
 			self.db.Execute('''UPDATE %s SET %s=?, flags=flags||'%s ' WHERE %s'''%(table,column,self.code(),clause),(value,))
 		else:
