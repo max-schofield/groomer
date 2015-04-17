@@ -77,7 +77,7 @@ class LADTI(LA):
                 
         #By code across years
 		rows = []
-		for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
+		for species in self.dataset.species:
 			rows += self.db.Rows('''SELECT 
 						species_code,
 						destination_type,
@@ -97,9 +97,9 @@ class LADTI(LA):
 			rows
 		)
                 
-                # By code and year for each species
+        # By code and year for each species
 		div += FARTable(
-			'''Records in the <i>landing</i> table by species_code, destination_type and fishing_year for the top three destination codes.''',
+			'''Records in the <i>landing</i> table by species_code, destination_type and fishing_year for the top five species and top five destination codes.''',
 			('Species','Destination','Fishing year','Records','Landings (t)'),
 			self.db.Rows('''
                 SELECT 
@@ -110,8 +110,8 @@ class LADTI(LA):
                     sum(green_weight)/1000
                 FROM landing
                 WHERE 
-                	species_code IS NOT NULL AND
-                	destination_type IN (SELECT destination_type FROM landing GROUP BY destination_type ORDER BY sum(green_weight) DESC LIMIT 3)
+                	species_code IN (SELECT species_code FROM landing GROUP BY species_code ORDER BY sum(green_weight) DESC LIMIT 5) AND
+                	destination_type IN (SELECT destination_type FROM landing GROUP BY destination_type ORDER BY sum(green_weight) DESC LIMIT 5)
                 GROUP BY species_code,destination_type,fishing_year;
              ''')
 		)
@@ -147,7 +147,7 @@ class LADTH(LA):
 		else:
 			div += P('A total of %i records were flagged by this check. The following table summarises the flagged records by destination_type'%count)
 			rows = []
-			for species in self.db.Values('''SELECT DISTINCT species_code FROM landing;'''):
+			for species in self.dataset.species:
 				rows += self.db.Rows('''SELECT 
 							species_code,
 							destination_type,
@@ -193,15 +193,15 @@ class LADTT(LA):
 		else: 
 			p += 'A total of %i landing records were flagged by this check.The following'%count
 			rows = []
-			for species in self.db.Values('''SELECT DISTINCT species_code FROM landing WHERE species_code IS NOT NULL;'''):
-				rows += self.db.Rows('''
+			for species in self.dataset.species:
+				rows.append(self.db.Rows('''
 				SELECT 
 					species_code,
 					count(*),
 					sum(green_weight)/1000,
 					sum(green_weight)/(SELECT sum(green_weight) FROM landing WHERE species_code='%s')*100
 				FROM landing
-				WHERE flags LIKE '%%LADTT%%' AND species_code=='%s';'''%(species,species))
+				WHERE flags LIKE '%%LADTT%%' AND species_code=='%s';'''%(species,species)))
 			p += FARTable(
 				'Summary of records flagged by this check by species.',
 				('Species','Landing events','Landings (t)','Landings (%)'),
