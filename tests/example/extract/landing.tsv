@@ -1,0 +1,1 @@
+event_key	version_seqno	group_key	specprod_seqno	landing_datetime	landing_name	species_code	fishstock_code	state_code	destination_type	unit_type	unit_num	unit_num_latest	unit_num_other	unit_weight	conv_factor	green_weight	green_weight_type	processed_weight	processed_weight_type	tranship_vessel_key	vessel_key	client_key	dcf_key	form_type	trip
