@@ -316,3 +316,5 @@ A dataset's `summarise()` method, produces a HTML report with tables and figures
 ```
 
 The HTML report is saved in the project directory as `summary.html` with any images for graphs stored in the `summary` sub-directory.
+
+The summarize method, and all associated HTML generation and plotting code, was removed in version 1.3. This was done to reduce the dependencies required to get Groomer running on the Kahawai system and focus this repo on the actual grooming and landings allocation. A more modern approach to summary report generation is likely to be implemented in the future.
