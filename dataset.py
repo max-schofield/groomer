@@ -1,6 +1,7 @@
 import sys,os,sqlite3,string,datetime,random,copy
-
 from collections import OrderedDict
+
+import dateutil.parser
 
 from database import Database
 from checks import *
@@ -541,10 +542,7 @@ go
                         if dt_format is None: dt_format = self.extract_datetime_format.get('_default_')
                         value = datetime.datetime.strptime(value,dt_format)
                     else:
-                        ##Deal with datetime format = 20/02/1991 12:00:00.000 AM
-                        bits = value.split()
-                        if len(bits)>0: value = datetime.datetime.strptime(bits[0],'%d/%m/%Y')
-                        else: value = None
+                        value = dateutil.parser.parse(value)
                 cleaned[index] = value
                 
             values.append(cleaned)
